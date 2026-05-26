@@ -45,9 +45,13 @@ app.use(
 
 app.use("/api/export", require("./routes/exportRoutes"));
 
-app.get("*", (req, res) =>
-  res.sendFile(path.join(__dirname, "public", "index.html")),
-);
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "index.html"));
+});
 
 app.use(notFound);
 app.use(errorHandler);
