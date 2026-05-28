@@ -60,65 +60,143 @@ function percent(n) {
 function layout(title) {
   requireAuth();
 
-  let navItems = [];
+  const initials = (user?.name || "U").charAt(0).toUpperCase();
+
+  const isActive = (href) => href.includes(page) || href.endsWith(page);
+
+  let navGroups = [];
 
   if (user?.role === "client") {
-    navItems = [
-      ["📊", "Client Dashboard", "/client-dashboard.html"],
-      ["📅", "Project Timeline", "/client-dashboard.html"],
+    navGroups = [
+      {
+        title: "MAIN",
+        items: [
+          ["📊", "Client Dashboard", "/client-dashboard.html"],
+          ["📅", "Project Timeline", "/client-dashboard.html"],
+        ],
+      },
     ];
   } else if (user?.role === "inventory") {
-    navItems = [
-      ["📊", "Inventory Dashboard", "/inventory-dashboard.html"],
-      ["🧱", "Materials", "/materials.html"],
-      ["🚜", "Equipment", "/equipment.html"],
-      ["📦", "Material Requests", "/material-requests.html"],
-      ["🚚", "Equipment Requests", "/equipment-requests.html"],
+    navGroups = [
+      {
+        title: "MAIN",
+        items: [["📊", "Inventory Dashboard", "/inventory-dashboard.html"]],
+      },
+      {
+        title: "WAREHOUSE",
+        items: [
+          ["🧱", "Materials", "/materials.html"],
+          ["🚜", "Equipment", "/equipment.html"],
+        ],
+      },
+      {
+        title: "REQUESTS",
+        items: [
+          ["📦", "Material Requests", "/material-requests.html"],
+          ["🚚", "Equipment Requests", "/equipment-requests.html"],
+        ],
+      },
     ];
   } else {
-    navItems = [
-      ["🏠", "Dashboard", "/dashboard.html"],
-      ["📁", "Projects", "/projects.html"],
-      ["✅", "Tasks", "/tasks.html"],
-      ["📅", "Gantt Chart", "/gantt.html"],
-      ["📝", "Daily Reports", "/reports.html"],
-      ["🧱", "Materials", "/materials.html"],
-      ["📦", "Material Requests", "/material-requests.html"],
-      ["💰", "Expenses", "/expenses.html"],
-      ["💸", "Expense Requests", "/expense-requests.html"],
-      ...(user.role === "admin"
-        ? [["📊", "Expense Analytics", "/expense-analytics.html"]]
-        : []),
-      ["👷", "Manpower", "/manpower.html"],
-      ["🚜", "Equipment", "/equipment.html"],
-      ["🚚", "Equipment Requests", "/equipment-requests.html"],
-      ["⚠️", "Issues/Risks", "/issues.html"],
+    navGroups = [
+      {
+        title: "MAIN",
+        items: [
+          ["🏠", "Dashboard", "/dashboard.html"],
+          ["📁", "Projects", "/projects.html"],
+        ],
+      },
+      {
+        title: "PROJECT OPERATIONS",
+        items: [
+          ["✅", "Tasks", "/tasks.html"],
+          ["📅", "Gantt Chart", "/gantt.html"],
+          ["📝", "Daily Reports", "/reports.html"],
+          ["⚠️", "Issues/Risks", "/issues.html"],
+        ],
+      },
+      {
+        title: "RESOURCES",
+        items: [
+          ["🧱", "Materials", "/materials.html"],
+          ["📦", "Material Requests", "/material-requests.html"],
+          ["🚜", "Equipment", "/equipment.html"],
+          ["🚚", "Equipment Requests", "/equipment-requests.html"],
+        ],
+      },
+      {
+        title: "MANPOWER",
+        items: [
+          ["👷", "Manpower", "/manpower.html"],
+          ["👥", "Workers", "/workers.html"],
+          ["📨", "Manpower Requests", "/manpower-requests.html"],
+          ["📊", "Planned vs Actual", "/manpower-plans.html"],
+          ["🧾", "Attendance", "/manpower-attendance.html"],
+        ],
+      },
+      {
+        title: "FINANCE",
+        items: [
+          ["💰", "Expenses", "/expenses.html"],
+          ["💸", "Expense Requests", "/expense-requests.html"],
+          ...(user.role === "admin"
+            ? [["📊", "Expense Analytics", "/expense-analytics.html"]]
+            : []),
+        ],
+      },
     ];
   }
 
   document.body.innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand">
-          <div class="brand-icon">🏗️</div>
-          <div>
-            <h2>Construction PMS</h2>
-            <span>Project Monitoring</span>
+        <div class="sidebar-inner">
+          <div class="brand">
+            <div class="brand-icon">🏗️</div>
+            <div>
+              <h2>Construction PMS</h2>
+              <span>Project Monitoring</span>
+            </div>
+          </div>
+
+          <nav class="nav">
+            ${navGroups
+              .map(
+                (group) => `
+                  <div class="nav-group">
+                    <p class="nav-title">${group.title}</p>
+
+                    ${group.items
+                      .map(
+                        ([icon, label, href]) => `
+                          <a href="${href}" class="${isActive(href) ? "active" : ""}">
+                            <span class="nav-icon">${icon}</span>
+                            <span class="nav-label">${label}</span>
+                            <span class="nav-arrow">›</span>
+                          </a>
+                        `,
+                      )
+                      .join("")}
+                  </div>
+                `,
+              )
+              .join("")}
+          </nav>
+
+          <div class="sidebar-footer">
+            <div class="sidebar-user">
+              <span>${initials}</span>
+              <div>
+                <b>${user?.name || "User"}</b>
+                <small>${user?.role || "Staff"}</small>
+              </div>
+            </div>
+
+            <button class="sidebar-logout" onclick="logout()">
+              ⏻ Logout
+            </button>
           </div>
         </div>
-
-        <nav class="nav">
-          ${navItems
-            .map(
-              ([icon, label, href]) => `
-              <a href="${href}" class="${href.includes(page) ? "active" : ""}">
-                <span>${icon}</span>
-                ${label}
-              </a>
-            `,
-            )
-            .join("")}
-        </nav>
       </aside>
 
       <main class="main">
@@ -133,35 +211,38 @@ function layout(title) {
 
           <div class="topbar-actions">
             <div class="notification-wrapper">
-  <button
-    id="notificationBell"
-    class="icon-btn"
-    title="Notifications"
-    onclick="toggleNotifications()"
-  >
-    🔔
-  </button>
+              <button
+                id="notificationBell"
+                class="icon-btn"
+                title="Notifications"
+                onclick="toggleNotifications()"
+              >
+                🔔
+              </button>
 
-  <div id="notificationDropdown" class="notification-dropdown">
-    <div id="notificationList">
-      <p class="empty-notif">Loading notifications...</p>
-    </div>
+              <div id="notificationDropdown" class="notification-dropdown">
+                <div id="notificationList">
+                  <p class="empty-notif">Loading notifications...</p>
+                </div>
 
-    <button class="btn secondary" onclick="markNotificationsRead()">
-      Mark all as read
-    </button>
-    <button class="btn danger" onclick="deleteAllNotifications()">
-  Delete All
-</button>
-  </div>
-</div>
+                <button class="btn secondary" onclick="markNotificationsRead()">
+                  Mark all as read
+                </button>
+
+                <button class="btn danger" onclick="deleteAllNotifications()">
+                  Delete All
+                </button>
+              </div>
+            </div>
+
             <div class="user-pill">
-              <span>${(user?.name || "U").charAt(0).toUpperCase()}</span>
+              <span>${initials}</span>
               <div>
                 <b>${user?.name || "User"}</b>
                 <small>${user?.role || "Staff"}</small>
               </div>
             </div>
+
             <button class="btn secondary" onclick="logout()">Logout</button>
           </div>
         </header>
@@ -170,6 +251,7 @@ function layout(title) {
       </main>
     </div>
   `;
+
   setTimeout(() => {
     loadNotifications();
 
@@ -2135,6 +2217,9 @@ if (page === "equipment-requests.html") equipmentRequestsPage();
 if (page === "gantt.html") ganttPage();
 if (page === "client-dashboard.html") clientDashboard();
 if (page === "expense-analytics.html") expenseAnalyticsPage();
+if (page === "workers.html") workersPage();
+if (page === "manpower-requests.html") manpowerRequestsPage();
+if (page === "manpower-plans.html") manpowerPlansPage();
 
 async function ganttPage() {
   layout("Project Gantt Chart");
@@ -3366,35 +3451,1181 @@ if (page === "expenses.html")
     ],
   );
 
-if (page === "manpower.html")
-  simplePage(
-    "Manpower",
-    "/api/manpower",
+if (page === "manpower.html") manpowerPage();
+
+async function manpowerPage() {
+  layout("Manpower Monitoring");
+
+  const projects = await api("/api/projects/my-projects");
+
+  const selectedProject =
+    localStorage.getItem("selectedManpowerProject") || projects?.[0]?._id || "";
+
+  const rows = await api(
+    selectedProject
+      ? `/api/manpower?project=${selectedProject}`
+      : "/api/manpower",
+  );
+
+  const projectOptions = projects
+    .map(
+      (p) => `
+        <option value="${p._id}" ${selectedProject === p._id ? "selected" : ""}>
+          ${p.name}
+        </option>
+      `,
+    )
+    .join("");
+
+  const totalSkilled = rows.reduce(
+    (sum, r) => sum + Number(r.skilledWorkers || 0),
+    0,
+  );
+
+  const totalHelpers = rows.reduce((sum, r) => sum + Number(r.helpers || 0), 0);
+
+  const totalEngineers = rows.reduce(
+    (sum, r) => sum + Number(r.engineers || 0),
+    0,
+  );
+
+  const totalOperators = rows.reduce(
+    (sum, r) => sum + Number(r.operators || 0),
+    0,
+  );
+
+  const totalManpower =
+    totalSkilled + totalHelpers + totalEngineers + totalOperators;
+
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <div class="form-grid">
+        <div>
+          <label>Select Project</label>
+          <select
+  id="manpowerProjectSelect"
+  onchange="changeManpowerProject(this.value)"
+>
+            ${projectOptions}
+          </select>
+        </div>
+
+        <div>
+          <label>Search</label>
+          <input
+            id="manpowerSearch"
+            placeholder="Search manpower remarks or project..."
+            oninput="filterManpower()"
+          >
+        </div>
+      </div>
+
+      <br>
+
+      <button class="btn" onclick="manpowerForm()">
+        Add Manpower Record
+      </button>
+
+      <button class="btn secondary" onclick="downloadManpowerExcel()">
+        Export Excel
+      </button>
+    </section>
+
+    <br>
+
+    <section class="kpi-grid">
+      <div class="kpi-card blue">
+        <span class="kpi-icon">👷</span>
+        <small>Total Workers</small>
+        <h3>${totalManpower}</h3>
+        <p>Recorded manpower</p>
+      </div>
+
+      <div class="kpi-card green">
+        <span class="kpi-icon">🧰</span>
+        <small>Skilled Workers</small>
+        <h3>${totalSkilled}</h3>
+        <p>Site skilled labor</p>
+      </div>
+
+      <div class="kpi-card orange">
+        <span class="kpi-icon">🤝</span>
+        <small>Helpers</small>
+        <h3>${totalHelpers}</h3>
+        <p>Support workers</p>
+      </div>
+
+      <div class="kpi-card emerald">
+        <span class="kpi-icon">👷‍♂️</span>
+        <small>Engineers</small>
+        <h3>${totalEngineers}</h3>
+        <p>Technical supervision</p>
+      </div>
+
+      <div class="kpi-card red">
+        <span class="kpi-icon">🏗️</span>
+        <small>Operators</small>
+        <h3>${totalOperators}</h3>
+        <p>Equipment operators</p>
+      </div>
+    </section>
+
+    <section class="dashboard-grid two">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Manpower Analytics</p>
+            <h3>Workforce Distribution</h3>
+          </div>
+        </div>
+
+        <canvas id="manpowerDistributionChart"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Daily Trend</p>
+            <h3>Workers Per Record</h3>
+          </div>
+        </div>
+
+        <canvas id="manpowerTrendChart"></canvas>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Records</p>
+          <h3>Daily Manpower Logs</h3>
+        </div>
+      </div>
+
+      <div id="manpowerTable"></div>
+    </section>
+  `;
+
+  window.manpowerRows = rows;
+
+  renderManpowerTable(rows);
+  renderManpowerCharts(rows, {
+    totalSkilled,
+    totalHelpers,
+    totalEngineers,
+    totalOperators,
+  });
+}
+
+async function manpowerPlansPage() {
+  layout("Planned vs Actual Manpower");
+
+  const projects = await api("/api/projects/my-projects");
+
+  const selectedProject =
+    localStorage.getItem("selectedManpowerPlanProject") ||
+    projects?.[0]?._id ||
+    "";
+
+  const plans = await api(
+    selectedProject
+      ? `/api/manpower-plans?project=${selectedProject}`
+      : "/api/manpower-plans",
+  );
+
+  const comparison = await api(
+    selectedProject
+      ? `/api/manpower-plans/comparison/summary?project=${selectedProject}`
+      : "/api/manpower-plans/comparison/summary",
+  );
+
+  const projectOptions = projects
+    .map(
+      (p) => `
+        <option value="${p._id}" ${selectedProject === p._id ? "selected" : ""}>
+          ${p.name}
+        </option>
+      `,
+    )
+    .join("");
+
+  const totalPlanned = comparison.reduce(
+    (sum, r) => sum + Number(r.planned?.total || 0),
+    0,
+  );
+  const totalActual = comparison.reduce(
+    (sum, r) => sum + Number(r.actual?.total || 0),
+    0,
+  );
+  const totalShortage = comparison.reduce(
+    (sum, r) => sum + Number(r.shortage || 0),
+    0,
+  );
+  const shortageDays = comparison.filter((r) => r.status === "Shortage").length;
+
+  window.manpowerPlansData = plans;
+  window.manpowerComparisonData = comparison;
+
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <div class="form-grid">
+        <div>
+          <label>Select Project</label>
+          <select onchange="changeManpowerPlanProject(this.value)">
+            ${projectOptions}
+          </select>
+        </div>
+
+        <div>
+          <label>Search</label>
+          <input
+            id="manpowerPlanSearch"
+            placeholder="Search activity / project / status..."
+            oninput="filterManpowerPlans()"
+          >
+        </div>
+      </div>
+
+      <br>
+
+      <button class="btn" onclick="manpowerPlanForm()">Add Manpower Plan</button>
+      <button class="btn secondary" onclick="downloadManpowerPlanExcel()">
+  Export Excel
+</button>
+    </section>
+
+    <br>
+
+    <section class="kpi-grid">
+      <div class="kpi-card blue">
+        <span class="kpi-icon">📋</span>
+        <small>Planned Workers</small>
+        <h3>${totalPlanned}</h3>
+        <p>Total required workforce</p>
+      </div>
+
+      <div class="kpi-card green">
+        <span class="kpi-icon">👷</span>
+        <small>Actual Workers</small>
+        <h3>${totalActual}</h3>
+        <p>Actual present workforce</p>
+      </div>
+
+      <div class="kpi-card red">
+        <span class="kpi-icon">⚠️</span>
+        <small>Total Shortage</small>
+        <h3>${totalShortage}</h3>
+        <p>Missing workers</p>
+      </div>
+
+      <div class="kpi-card orange">
+        <span class="kpi-icon">📉</span>
+        <small>Shortage Days</small>
+        <h3>${shortageDays}</h3>
+        <p>Days below manpower plan</p>
+      </div>
+    </section>
+
+    <section class="dashboard-grid two">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Comparison</p>
+            <h3>Planned vs Actual Workers</h3>
+          </div>
+        </div>
+        <canvas id="plannedActualChart"></canvas>
+      </div>
+
+      <div class="panel danger-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Alerts</p>
+            <h3>Manpower Shortage Alerts</h3>
+          </div>
+        </div>
+
+        ${
+          comparison.filter((r) => r.status === "Shortage").length
+            ? comparison
+                .filter((r) => r.status === "Shortage")
+                .slice(0, 6)
+                .map(
+                  (r) => `
+                    <div class="alert-item">
+                      <b>${r.project?.name || "-"}</b>
+                      <p>
+  ${r.activity} shortage:
+  Skilled ${r.shortages?.skilledWorkers || 0},
+  Helpers ${r.shortages?.helpers || 0},
+  Engineers ${r.shortages?.engineers || 0},
+  Operators ${r.shortages?.operators || 0}
+</p>
+                      <small>${date(r.date)} • Planned ${r.planned.total}, Actual ${r.actual.total}</small>
+                    </div>
+                  `,
+                )
+                .join("")
+            : `<div class="empty-state">No manpower shortage detected.</div>`
+        }
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Records</p>
+          <h3>Planned vs Actual Table</h3>
+        </div>
+      </div>
+
+      <div id="manpowerComparisonTable"></div>
+    </section>
+  `;
+
+  renderManpowerComparisonTable(comparison);
+  renderPlannedActualChart(comparison);
+}
+
+function changeManpowerPlanProject(projectId) {
+  localStorage.setItem("selectedManpowerPlanProject", projectId);
+  manpowerPlansPage();
+}
+
+function manpowerPlanForm() {
+  const selectedProject =
+    localStorage.getItem("selectedManpowerPlanProject") || "";
+
+  if (!selectedProject) {
+    alert("Please select a project first.");
+    return;
+  }
+
+  modal(`
+    <h3>Add Manpower Plan</h3>
+
+    <form onsubmit="saveManpowerPlan(event)">
+      <input type="hidden" name="project" value="${selectedProject}">
+
+      <label>Date</label>
+      <input name="date" type="date" value="${date(new Date())}" required>
+
+      <label>Activity</label>
+      <input name="activity" placeholder="Example: Concrete pouring / masonry works" required>
+
+      <div class="form-grid">
+        <input name="skilledWorkers" type="number" min="0" placeholder="Planned Skilled">
+        <input name="helpers" type="number" min="0" placeholder="Planned Helpers">
+        <input name="engineers" type="number" min="0" placeholder="Planned Engineers">
+        <input name="operators" type="number" min="0" placeholder="Planned Operators">
+      </div>
+
+      <label>Remarks</label>
+      <textarea name="remarks" placeholder="Planning notes"></textarea>
+
+      <button class="btn">Save Plan</button>
+    </form>
+  `);
+}
+
+async function saveManpowerPlan(e) {
+  e.preventDefault();
+
+  const data = Object.fromEntries(new FormData(e.target));
+
+  await api("/api/manpower-plans", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  alert("Manpower plan saved.");
+  location.reload();
+}
+
+function renderManpowerComparisonTable(rows) {
+  qs("#manpowerComparisonTable").innerHTML = table(
+    rows.map((r) => ({
+      ...r,
+      actions: `
+  ${
+    r.status === "Shortage"
+      ? `<button class="btn warning" onclick='createRequestFromShortage(${JSON.stringify(r)})'>
+          Request Shortage
+        </button>`
+      : ""
+  }
+
+  ${
+    user.role === "admin"
+      ? `<button class="btn danger" onclick="del('/api/manpower-plans','${r._id}')">Delete</button>`
+      : ""
+  }
+`,
+    })),
     [
-      { name: "project" },
-      { name: "date", label: "Date", type: "date", required: true },
-      { name: "skilledWorkers", label: "Skilled workers", type: "number" },
-      { name: "helpers", label: "Helpers", type: "number" },
-      { name: "engineers", label: "Engineers", type: "number" },
-      { name: "operators", label: "Operators", type: "number" },
-    ],
-    [
-      projectCol,
-      { label: "Date", render: (r) => date(r.date) },
-      { label: "Skilled", render: (r) => r.skilledWorkers ?? 0 },
-      { label: "Helpers", render: (r) => r.helpers ?? 0 },
-      { label: "Engineers", render: (r) => r.engineers ?? 0 },
-      { label: "Operators", render: (r) => r.operators ?? 0 },
-      {
-        label: "Total",
-        render: (r) =>
-          Number(r.skilledWorkers || 0) +
-          Number(r.helpers || 0) +
-          Number(r.engineers || 0) +
-          Number(r.operators || 0),
-      },
+      [
+        { label: "Project", render: (r) => r.project?.name || "-" },
+        { label: "Date", render: (r) => date(r.date) },
+        { label: "Activity", key: "activity" },
+        { label: "Planned", render: (r) => r.planned?.total || 0 },
+        { label: "Actual", render: (r) => r.actual?.total || 0 },
+        {
+          label: "Position Shortage",
+          render: (r) => `
+      Skilled: ${r.shortages?.skilledWorkers || 0}<br>
+      Helpers: ${r.shortages?.helpers || 0}<br>
+      Engineers: ${r.shortages?.engineers || 0}<br>
+      Operators: ${r.shortages?.operators || 0}
+    `,
+        },
+        { label: "Total Shortage", render: (r) => r.shortage || 0 },
+        {
+          label: "Risk",
+          render: (r) =>
+            `<span class="status-badge ${statusClass(r.delayRisk)}">${r.delayRisk}</span>`,
+        },
+        {
+          label: "Status",
+          render: (r) =>
+            `<span class="status-badge ${statusClass(r.status)}">${r.status}</span>`,
+        },
+        { label: "Remarks", render: (r) => r.remarks || "-" },
+      ],
     ],
   );
+}
+
+async function downloadManpowerPlanExcel() {
+  try {
+    const projectId = localStorage.getItem("selectedManpowerPlanProject") || "";
+
+    const url = projectId
+      ? `/api/export/manpower-plans-excel?project=${projectId}`
+      : "/api/export/manpower-plans-excel";
+
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to export manpower plan report.");
+    }
+
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = "planned-vs-actual-manpower.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function createRequestFromShortage(row) {
+  const shortageOptions = [];
+
+  if (row.shortages?.skilledWorkers > 0) {
+    shortageOptions.push({
+      position: "Skilled",
+      qty: row.shortages.skilledWorkers,
+    });
+  }
+
+  if (row.shortages?.helpers > 0) {
+    shortageOptions.push({
+      position: "Helper",
+      qty: row.shortages.helpers,
+    });
+  }
+
+  if (row.shortages?.engineers > 0) {
+    shortageOptions.push({
+      position: "Engineer",
+      qty: row.shortages.engineers,
+    });
+  }
+
+  if (row.shortages?.operators > 0) {
+    shortageOptions.push({
+      position: "Operator",
+      qty: row.shortages.operators,
+    });
+  }
+
+  if (!shortageOptions.length) {
+    alert("No shortage found.");
+    return;
+  }
+
+  modal(`
+    <h3>Create Manpower Request from Shortage</h3>
+
+    <form onsubmit="saveShortageRequest(event)">
+      <input type="hidden" name="project" value="${row.project?._id || row.project}">
+      <input type="hidden" name="activity" value="${row.activity || ""}">
+
+      <label>Position Needed</label>
+      <select name="position" id="shortagePositionSelect" onchange="updateShortageQuantity()" required>
+        ${shortageOptions
+          .map(
+            (s) => `
+              <option value="${s.position}" data-qty="${s.qty}">
+                ${s.position} - shortage ${s.qty}
+              </option>
+            `,
+          )
+          .join("")}
+      </select>
+
+      <label>Quantity Needed</label>
+      <input id="shortageQtyInput" name="quantityNeeded" type="number" min="1" required>
+
+      <div class="form-grid">
+        <div>
+          <label>Start Date</label>
+          <input name="assignmentStartDate" type="date" value="${date(row.date)}" required>
+        </div>
+
+        <div>
+          <label>End Date</label>
+          <input name="assignmentEndDate" type="date" value="${date(row.date)}" required>
+        </div>
+      </div>
+
+      <label>Reason</label>
+      <textarea name="reason">Shortage detected for ${row.activity}. Planned ${row.planned?.total || 0}, actual ${row.actual?.total || 0}.</textarea>
+
+      <button class="btn success">Submit Manpower Request</button>
+    </form>
+  `);
+
+  updateShortageQuantity();
+}
+
+function updateShortageQuantity() {
+  const select = document.getElementById("shortagePositionSelect");
+  const input = document.getElementById("shortageQtyInput");
+
+  if (!select || !input) return;
+
+  const selected = select.options[select.selectedIndex];
+  input.value = selected.dataset.qty || 1;
+}
+
+async function saveShortageRequest(e) {
+  e.preventDefault();
+
+  const data = Object.fromEntries(new FormData(e.target));
+
+  await api("/api/manpower-requests", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  alert("Manpower request created from shortage.");
+  location.href = "/manpower-requests.html";
+}
+
+function filterManpowerPlans() {
+  const keyword = qs("#manpowerPlanSearch").value.toLowerCase();
+
+  const filtered = (window.manpowerComparisonData || []).filter((r) =>
+    `${r.project?.name || ""} ${r.activity || ""} ${r.status || ""}`
+      .toLowerCase()
+      .includes(keyword),
+  );
+
+  renderManpowerComparisonTable(filtered);
+}
+
+function renderPlannedActualChart(rows) {
+  new Chart(document.getElementById("plannedActualChart"), {
+    type: "bar",
+    data: {
+      labels: rows.map((r) => `${date(r.date)} - ${r.activity}`),
+      datasets: [
+        {
+          label: "Planned",
+          data: rows.map((r) => r.planned?.total || 0),
+          backgroundColor: "#2563eb",
+          borderRadius: 10,
+        },
+        {
+          label: "Actual",
+          data: rows.map((r) => r.actual?.total || 0),
+          backgroundColor: "#16a34a",
+          borderRadius: 10,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+      },
+    },
+  });
+}
+
+if (page === "manpower-attendance.html") manpowerAttendancePage();
+
+async function manpowerAttendancePage() {
+  layout("Manpower Attendance");
+
+  const projects = await api("/api/projects/my-projects");
+
+  const selectedProject =
+    localStorage.getItem("selectedAttendanceProject") ||
+    projects?.[0]?._id ||
+    "";
+
+  const rows = await api(
+    selectedProject
+      ? `/api/manpower-attendance?project=${selectedProject}`
+      : "/api/manpower-attendance",
+  );
+
+  const analytics = await api(
+    selectedProject
+      ? `/api/manpower-attendance/analytics/summary?project=${selectedProject}`
+      : "/api/manpower-attendance/analytics/summary",
+  );
+
+  const projectOptions = projects
+    .map(
+      (p) => `
+        <option value="${p._id}" ${selectedProject === p._id ? "selected" : ""}>
+          ${p.name}
+        </option>
+      `,
+    )
+    .join("");
+
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <div class="form-grid">
+        <div>
+          <label>Select Project</label>
+          <select id="attendanceProjectSelect" onchange="changeAttendanceProject(this.value)">
+            ${projectOptions}
+          </select>
+        </div>
+
+        <div>
+          <label>Search</label>
+          <input id="attendanceSearch" placeholder="Search project / remarks..." oninput="filterAttendance()">
+        </div>
+      </div>
+
+      <br>
+
+      <button class="btn" onclick="attendanceForm()">Add Attendance</button>
+    </section>
+
+    <br>
+
+    <section class="kpi-grid">
+      <div class="kpi-card green">
+        <span class="kpi-icon">👷</span>
+        <small>Present</small>
+        <h3>${analytics.summary.present}</h3>
+        <p>Total present workers</p>
+      </div>
+
+      <div class="kpi-card red">
+        <span class="kpi-icon">❌</span>
+        <small>Absent</small>
+        <h3>${analytics.summary.absent}</h3>
+        <p>Total absent workers</p>
+      </div>
+
+      <div class="kpi-card orange">
+        <span class="kpi-icon">⏱️</span>
+        <small>Overtime Hours</small>
+        <h3>${analytics.summary.overtime}</h3>
+        <p>Total OT hours</p>
+      </div>
+
+      <div class="kpi-card blue">
+        <span class="kpi-icon">💰</span>
+        <small>Labor Cost</small>
+        <h3>${money(analytics.summary.laborCost)}</h3>
+        <p>Auto-computed labor cost</p>
+      </div>
+    </section>
+
+    ${
+      analytics.shortageAlerts.length
+        ? `
+          <section class="panel danger-panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Attention Needed</p>
+                <h3>Manpower Shortage Alerts</h3>
+              </div>
+            </div>
+
+            ${analytics.shortageAlerts
+              .map(
+                (a) => `
+                  <div class="alert-item">
+                    <b>${a.project}</b>
+                    <p>${a.message}</p>
+                    <small>${date(a.date)} • Present workers: ${a.present}</small>
+                  </div>
+                `,
+              )
+              .join("")}
+          </section>
+          <br>
+        `
+        : ""
+    }
+
+    <section class="dashboard-grid two">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Attendance Trend</p>
+            <h3>Present vs Absent</h3>
+          </div>
+        </div>
+        <canvas id="attendanceTrendChart"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Labor Analytics</p>
+            <h3>Labor Cost Trend</h3>
+          </div>
+        </div>
+        <canvas id="laborCostTrendChart"></canvas>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Attendance Logs</p>
+          <h3>Daily Workforce Attendance</h3>
+        </div>
+      </div>
+
+      <div id="attendanceTable"></div>
+    </section>
+  `;
+
+  window.attendanceRows = rows;
+
+  renderAttendanceTable(rows);
+  renderAttendanceCharts(analytics.trend);
+}
+
+function changeAttendanceProject(projectId) {
+  localStorage.setItem("selectedAttendanceProject", projectId);
+  manpowerAttendancePage();
+}
+
+function renderAttendanceTable(rows) {
+  qs("#attendanceTable").innerHTML = table(
+    rows.map((r) => ({
+      ...r,
+      actions:
+        user.role === "admin"
+          ? `<button class="btn danger" onclick="del('/api/manpower-attendance','${r._id}')">Delete</button>`
+          : "",
+    })),
+    [
+      { label: "Project", render: (r) => r.project?.name || "-" },
+      { label: "Date", render: (r) => date(r.date) },
+      { label: "Present", key: "totalPresent" },
+      { label: "Absent", key: "totalAbsent" },
+      { label: "Late", key: "totalLate" },
+      { label: "OT Hours", key: "totalOvertimeHours" },
+      { label: "Labor Cost", render: (r) => money(r.totalLaborCost) },
+      { label: "Remarks", render: (r) => r.remarks || "-" },
+      { label: "Encoded By", render: (r) => r.encodedBy?.name || "-" },
+    ],
+  );
+}
+
+function filterAttendance() {
+  const keyword = qs("#attendanceSearch").value.toLowerCase();
+
+  const filtered = (window.attendanceRows || []).filter((r) => {
+    return (
+      (r.project?.name || "").toLowerCase().includes(keyword) ||
+      (r.remarks || "").toLowerCase().includes(keyword)
+    );
+  });
+
+  renderAttendanceTable(filtered);
+}
+
+function attendanceForm() {
+  const selectedProject =
+    qs("#attendanceProjectSelect")?.value ||
+    localStorage.getItem("selectedAttendanceProject") ||
+    "";
+
+  if (!selectedProject) {
+    alert("Please select a project first.");
+    return;
+  }
+
+  modal(`
+    <h3>Add Manpower Attendance</h3>
+
+    <form onsubmit="saveAttendance(event)">
+      <input type="hidden" name="project" value="${selectedProject}">
+
+      <label>Date</label>
+      <input name="date" type="date" value="${date(new Date())}" required>
+
+      <div class="section-header">
+        <h4>Workers</h4>
+        <button type="button" class="btn secondary" onclick="addAttendanceWorkerRow()">+ Add Worker</button>
+      </div>
+
+      <div id="attendanceWorkerList">
+        ${attendanceWorkerRow()}
+      </div>
+
+      <label>Remarks</label>
+      <textarea name="remarks" placeholder="Example: 2 workers absent due to rain"></textarea>
+
+      <br><br>
+      <button class="btn">Save Attendance</button>
+    </form>
+  `);
+}
+
+function attendanceWorkerRow() {
+  return `
+    <div class="dynamic-row attendance-worker-row">
+      <input class="workerName" placeholder="Worker name" required>
+
+      <select class="position">
+        <option>Skilled</option>
+        <option>Helper</option>
+        <option>Engineer</option>
+        <option>Operator</option>
+      </select>
+
+      <select class="status">
+        <option>Present</option>
+        <option>Absent</option>
+        <option>Late</option>
+        <option>Half Day</option>
+        <option>Leave</option>
+      </select>
+
+      <input class="ratePerDay" type="number" min="0" placeholder="Rate/day">
+      <input class="overtimeHours" type="number" min="0" placeholder="OT hrs">
+      <input class="remarks" placeholder="Remarks">
+    </div>
+  `;
+}
+
+function addAttendanceWorkerRow() {
+  document
+    .getElementById("attendanceWorkerList")
+    .insertAdjacentHTML("beforeend", attendanceWorkerRow());
+}
+
+async function saveAttendance(e) {
+  e.preventDefault();
+
+  const form = e.target;
+  const data = Object.fromEntries(new FormData(form));
+
+  const workers = [...document.querySelectorAll(".attendance-worker-row")]
+    .map((row) => ({
+      workerName: row.querySelector(".workerName")?.value,
+      position: row.querySelector(".position")?.value,
+      status: row.querySelector(".status")?.value,
+      ratePerDay: Number(row.querySelector(".ratePerDay")?.value || 0),
+      overtimeHours: Number(row.querySelector(".overtimeHours")?.value || 0),
+      remarks: row.querySelector(".remarks")?.value || "",
+    }))
+    .filter((w) => w.workerName);
+
+  if (!workers.length) {
+    alert("Please add at least one worker.");
+    return;
+  }
+
+  data.workers = workers;
+
+  await api("/api/manpower-attendance", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  alert("Attendance saved. Labor cost was automatically computed.");
+  location.reload();
+}
+
+function renderAttendanceCharts(trend) {
+  new Chart(document.getElementById("attendanceTrendChart"), {
+    type: "line",
+    data: {
+      labels: trend.map((x) => date(x.date)),
+      datasets: [
+        {
+          label: "Present",
+          data: trend.map((x) => x.present),
+          borderColor: "#16a34a",
+          backgroundColor: "rgba(22,163,74,0.12)",
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: "Absent",
+          data: trend.map((x) => x.absent),
+          borderColor: "#dc2626",
+          backgroundColor: "rgba(220,38,38,0.12)",
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    },
+    options: {
+      scales: { y: { beginAtZero: true } },
+      plugins: { legend: { position: "bottom" } },
+    },
+  });
+
+  new Chart(document.getElementById("laborCostTrendChart"), {
+    type: "bar",
+    data: {
+      labels: trend.map((x) => date(x.date)),
+      datasets: [
+        {
+          label: "Labor Cost",
+          data: trend.map((x) => x.laborCost),
+          backgroundColor: "#c87919",
+          borderRadius: 10,
+        },
+      ],
+    },
+    options: {
+      scales: { y: { beginAtZero: true } },
+      plugins: { legend: { position: "bottom" } },
+    },
+  });
+}
+
+function changeManpowerProject(projectId) {
+  localStorage.setItem("selectedManpowerProject", projectId);
+  manpowerPage();
+}
+
+function renderManpowerTable(rows) {
+  qs("#manpowerTable").innerHTML = table(
+    rows.map((r) => ({
+      ...r,
+      total:
+        Number(r.skilledWorkers || 0) +
+        Number(r.helpers || 0) +
+        Number(r.engineers || 0) +
+        Number(r.operators || 0),
+      actions:
+        user.role === "admin"
+          ? `<button class="btn danger" onclick="del('/api/manpower','${r._id}')">Delete</button>`
+          : "",
+    })),
+    [
+      { label: "Project", render: (r) => r.project?.name || "-" },
+      { label: "Date", render: (r) => date(r.date) },
+      { label: "Skilled", render: (r) => r.skilledWorkers || 0 },
+      { label: "Helpers", render: (r) => r.helpers || 0 },
+      { label: "Engineers", render: (r) => r.engineers || 0 },
+      { label: "Operators", render: (r) => r.operators || 0 },
+      { label: "Total", key: "total" },
+      { label: "Remarks", render: (r) => r.remarks || "-" },
+      { label: "Encoded By", render: (r) => r.encodedBy?.name || "-" },
+    ],
+  );
+}
+
+function filterManpower() {
+  const keyword = qs("#manpowerSearch").value.toLowerCase();
+
+  const filtered = (window.manpowerRows || []).filter((r) => {
+    return (
+      (r.project?.name || "").toLowerCase().includes(keyword) ||
+      (r.remarks || "").toLowerCase().includes(keyword)
+    );
+  });
+
+  renderManpowerTable(filtered);
+}
+
+function manpowerForm() {
+  const selectedProject =
+    qs("#manpowerProjectSelect")?.value ||
+    localStorage.getItem("selectedManpowerProject") ||
+    "";
+
+  if (!selectedProject) {
+    alert("Please select a project first.");
+    return;
+  }
+
+  modal(`
+    <h3>Add Manpower Record</h3>
+
+    <form onsubmit="saveManpower(event)">
+      <input
+        type="hidden"
+        name="project"
+        value="${selectedProject}"
+      >
+
+      <label>Date</label>
+      <input
+        name="date"
+        type="date"
+        value="${date(new Date())}"
+        required
+      >
+
+      <div class="form-grid">
+        <input
+          name="skilledWorkers"
+          type="number"
+          min="0"
+          placeholder="Skilled Workers"
+        >
+
+        <input
+          name="helpers"
+          type="number"
+          min="0"
+          placeholder="Helpers"
+        >
+
+        <input
+          name="engineers"
+          type="number"
+          min="0"
+          placeholder="Engineers"
+        >
+
+        <input
+          name="operators"
+          type="number"
+          min="0"
+          placeholder="Operators"
+        >
+      </div>
+
+      <label>Remarks</label>
+      <textarea
+        name="remarks"
+        placeholder="Example: All workers present"
+      ></textarea>
+
+      <br>
+
+      <button class="btn">
+        Save Manpower
+      </button>
+    </form>
+  `);
+}
+
+async function saveManpower(e) {
+  e.preventDefault();
+
+  const data = Object.fromEntries(new FormData(e.target));
+
+  if (!data.project) {
+    alert("Please select a project first.");
+    return;
+  }
+
+  await api("/api/manpower", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  alert("Manpower record saved.");
+  location.reload();
+}
+
+function renderManpowerCharts(rows, totals) {
+  new Chart(document.getElementById("manpowerDistributionChart"), {
+    type: "doughnut",
+    data: {
+      labels: ["Skilled", "Helpers", "Engineers", "Operators"],
+      datasets: [
+        {
+          data: [
+            totals.totalSkilled,
+            totals.totalHelpers,
+            totals.totalEngineers,
+            totals.totalOperators,
+          ],
+          backgroundColor: ["#2563eb", "#f97316", "#16a34a", "#dc2626"],
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: "bottom" },
+      },
+    },
+  });
+
+  new Chart(document.getElementById("manpowerTrendChart"), {
+    type: "line",
+    data: {
+      labels: rows.map((r) => date(r.date)).reverse(),
+      datasets: [
+        {
+          label: "Total Workers",
+          data: rows
+            .map(
+              (r) =>
+                Number(r.skilledWorkers || 0) +
+                Number(r.helpers || 0) +
+                Number(r.engineers || 0) +
+                Number(r.operators || 0),
+            )
+            .reverse(),
+          borderColor: "#2563eb",
+          backgroundColor: "rgba(37,99,235,0.12)",
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+      },
+    },
+  });
+}
 
 if (page === "equipment.html") equipmentPage();
 
@@ -5432,4 +6663,420 @@ async function expenseAnalyticsPage() {
 function changeExpenseAnalyticsProject(projectId) {
   localStorage.setItem("selectedExpenseAnalyticsProject", projectId);
   expenseAnalyticsPage();
+}
+
+async function workersPage() {
+  layout("Worker Master List");
+
+  const workers = await api("/api/workers");
+  const projects = await api("/api/projects/my-projects");
+
+  window.workersData = workers;
+  window.workerProjectOptions = projects
+    .map((p) => `<option value="${p._id}">${p.name}</option>`)
+    .join("");
+
+  qs("#content").innerHTML = `
+    ${
+      ["admin", "inventory"].includes(user.role)
+        ? `<button class="btn" onclick="workerForm()">Add Worker</button><br><br>`
+        : ""
+    }
+
+    <section class="panel">
+      <input id="workerSearch" placeholder="Search worker..." oninput="filterWorkers()">
+    </section>
+
+    <br>
+
+    <div id="workersTable"></div>
+  `;
+
+  renderWorkersTable(workers);
+}
+
+function renderWorkersTable(rows) {
+  qs("#workersTable").innerHTML = table(
+    rows.map((w) => ({
+      ...w,
+      actions: ["admin", "inventory"].includes(user.role)
+        ? `
+          <button class="btn" onclick='workerForm(${JSON.stringify(w)})'>Edit</button>
+          ${
+            user.role === "admin"
+              ? `<button class="btn danger" onclick="del('/api/workers','${w._id}')">Delete</button>`
+              : ""
+          }
+        `
+        : "",
+    })),
+    [
+      { label: "Name", key: "fullName" },
+      { label: "Position", key: "position" },
+      { label: "Contact", key: "contactNumber" },
+      { label: "Rate/Day", render: (w) => money(w.ratePerDay) },
+      { label: "Status", key: "status" },
+      { label: "Project", render: (w) => w.assignedProject?.name || "-" },
+      { label: "Remarks", key: "remarks" },
+    ],
+  );
+}
+
+function filterWorkers() {
+  const keyword = qs("#workerSearch").value.toLowerCase();
+
+  const filtered = (window.workersData || []).filter((w) =>
+    `${w.fullName} ${w.position} ${w.status} ${w.assignedProject?.name || ""}`
+      .toLowerCase()
+      .includes(keyword),
+  );
+
+  renderWorkersTable(filtered);
+}
+
+function workerForm(w = {}) {
+  modal(`
+    <h3>${w._id ? "Edit" : "Add"} Worker</h3>
+
+    <form onsubmit="saveWorker(event, '${w._id || ""}')">
+      <div class="form-grid">
+        <input name="fullName" placeholder="Full name" value="${w.fullName || ""}" required>
+
+        <select name="position" required>
+          <option ${w.position === "Skilled" ? "selected" : ""}>Skilled</option>
+          <option ${w.position === "Helper" ? "selected" : ""}>Helper</option>
+          <option ${w.position === "Engineer" ? "selected" : ""}>Engineer</option>
+          <option ${w.position === "Operator" ? "selected" : ""}>Operator</option>
+        </select>
+
+        <input name="contactNumber" placeholder="Contact number" value="${w.contactNumber || ""}">
+
+        <input name="ratePerDay" type="number" placeholder="Rate per day" value="${w.ratePerDay || 0}">
+
+        <select name="status">
+  <option ${w.status === "Available" ? "selected" : ""}>Available</option>
+  <option ${w.status === "Assigned" ? "selected" : ""}>Assigned</option>
+  <option ${w.status === "Inactive" ? "selected" : ""}>Inactive</option>
+  <option ${w.status === "On Leave" ? "selected" : ""}>On Leave</option>
+</select>
+
+        <select name="assignedProject">
+          <option value="">No project assigned</option>
+          ${window.workerProjectOptions || ""}
+        </select>
+      </div>
+
+      <textarea name="remarks" placeholder="Remarks">${w.remarks || ""}</textarea>
+
+      <button class="btn">Save Worker</button>
+    </form>
+  `);
+
+  setTimeout(() => {
+    const form = document.querySelector("#appModal form");
+    if (form && w.assignedProject?._id)
+      form.assignedProject.value = w.assignedProject._id;
+  }, 50);
+}
+
+async function saveWorker(e, id = "") {
+  e.preventDefault();
+
+  const data = Object.fromEntries(new FormData(e.target));
+
+  if (!data.assignedProject) data.assignedProject = null;
+
+  if (data.status === "Assigned" && !data.assignedProject) {
+    alert("Please select assigned project if worker status is Assigned.");
+    return;
+  }
+
+  if (data.status === "Available") {
+    data.assignedProject = null;
+  }
+
+  await api("/api/workers" + (id ? `/${id}` : ""), {
+    method: id ? "PUT" : "POST",
+    body: JSON.stringify(data),
+  });
+
+  alert("Worker saved.");
+  location.reload();
+}
+
+async function manpowerRequestsPage() {
+  layout("Manpower Requests");
+
+  const rows = await api("/api/manpower-requests");
+  const projects = await api("/api/projects/my-projects");
+
+  window.manpowerRequestsData = rows;
+  window.manpowerRequestProjectOptions = projects
+    .map((p) => `<option value="${p._id}">${p.name}</option>`)
+    .join("");
+
+  qs("#content").innerHTML = `
+    ${
+      user.role === "staff"
+        ? `<button class="btn" onclick="manpowerRequestForm()">Request Manpower</button><br><br>`
+        : ""
+    }
+
+    <section class="panel">
+      <input id="manpowerRequestSearch" placeholder="Search manpower request..." oninput="filterManpowerRequests()">
+    </section>
+
+    <br>
+
+    <div id="manpowerRequestsTable"></div>
+  `;
+
+  renderManpowerRequestsTable(rows);
+}
+
+function renderManpowerRequestsTable(rows) {
+  qs("#manpowerRequestsTable").innerHTML = table(
+    rows.map((r) => ({
+      ...r,
+      actions: `
+        ${
+          ["admin", "inventory"].includes(user.role) && r.status === "Pending"
+            ? `
+              <button class="btn success" onclick="reviewManpowerRequest('${r._id}', 'approve')">Approve</button>
+              <button class="btn danger" onclick="reviewManpowerRequest('${r._id}', 'reject')">Reject</button>
+            `
+            : ""
+        }
+
+        ${
+          ["admin", "inventory"].includes(user.role) && r.status === "Approved"
+            ? `<button class="btn" onclick="assignWorkersForm('${r._id}')">
+  Assign Workers
+</button>`
+            : ""
+        }
+        ${
+          ["admin", "inventory"].includes(user.role) && r.status === "Assigned"
+            ? `<button class="btn warning" onclick="unassignWorkers('${r._id}')">Unassign</button>`
+            : ""
+        }
+      `,
+    })),
+    [
+      { label: "Project", render: (r) => r.project?.name || "-" },
+      { label: "Position", key: "position" },
+      { label: "Qty Needed", key: "quantityNeeded" },
+      {
+        label: "Duration",
+        render: (r) =>
+          `${date(r.assignmentStartDate || r.neededDate)} → ${date(r.assignmentEndDate)}`,
+      },
+      { label: "Reason", key: "reason" },
+      { label: "Status", key: "status" },
+      { label: "Requested By", render: (r) => r.requestedBy?.name || "-" },
+      { label: "Reviewed By", render: (r) => r.reviewedBy?.name || "-" },
+      {
+        label: "Assigned Workers",
+        render: (r) =>
+          r.assignedWorkers?.length
+            ? r.assignedWorkers.map((w) => w.fullName || w).join(", ")
+            : "-",
+      },
+      { label: "Admin Remarks", key: "adminRemarks" },
+    ],
+  );
+}
+
+async function unassignWorkers(id) {
+  const adminRemarks = prompt("Reason for unassigning:", "Workers unassigned.");
+
+  if (adminRemarks === null) return;
+
+  if (!confirm("Unassign workers from this request?")) return;
+
+  await api(`/api/manpower-requests/${id}/unassign`, {
+    method: "PUT",
+    body: JSON.stringify({ adminRemarks }),
+  });
+
+  alert("Workers unassigned successfully.");
+  location.reload();
+}
+
+async function assignWorkersForm(requestId) {
+  const request = window.manpowerRequestsData.find((r) => r._id === requestId);
+
+  if (!request) {
+    alert("Request not found.");
+    return;
+  }
+
+  const workers = await api("/api/workers");
+
+  const matchingWorkers = workers.filter(
+    (w) =>
+      w.position === request.position &&
+      w.status === "Available" &&
+      !w.assignedProject,
+  );
+
+  modal(`
+    <h3>Assign Workers</h3>
+
+    <p>
+      Project: <b>${request.project?.name || "-"}</b><br>
+      Needed: <b>${request.quantityNeeded}</b> ${request.position} worker(s)
+    </p>
+
+    <form onsubmit="saveAssignedWorkers(event, '${requestId}')">
+      <div class="worker-assign-list">
+        ${
+          matchingWorkers.length
+            ? matchingWorkers
+                .map(
+                  (w) => `
+                    <label class="worker-assign-item">
+                      <input
+                        type="checkbox"
+                        name="workerIds"
+                        value="${w._id}"
+                      >
+
+                      <span>
+                        <b>${w.fullName}</b>
+                        <small>
+                          ${w.position} • ${money(w.ratePerDay)} / day
+                          ${
+                            w.assignedProject
+                              ? ` • Currently assigned to ${w.assignedProject?.name || "another project"}`
+                              : " • Available"
+                          }
+                        </small>
+                      </span>
+                    </label>
+                  `,
+                )
+                .join("")
+            : `<p class="empty-state">No available ${request.position} workers found.</p>`
+        }
+      </div>
+
+      <label>Admin Remarks</label>
+      <textarea
+        name="adminRemarks"
+        placeholder="Example: Assigned selected workers to requested project."
+      >Workers manually assigned.</textarea>
+
+      <button class="btn success">
+        Confirm Assignment
+      </button>
+    </form>
+  `);
+}
+
+async function saveAssignedWorkers(e, requestId) {
+  e.preventDefault();
+
+  const fd = new FormData(e.target);
+
+  const workerIds = fd.getAll("workerIds");
+
+  const request = window.manpowerRequestsData.find((r) => r._id === requestId);
+
+  if (workerIds.length !== Number(request.quantityNeeded || 0)) {
+    alert(`Please select exactly ${request.quantityNeeded} worker(s).`);
+    return;
+  }
+
+  await api(`/api/manpower-requests/${requestId}/mark-assigned`, {
+    method: "PUT",
+    body: JSON.stringify({
+      workerIds,
+      adminRemarks: fd.get("adminRemarks"),
+    }),
+  });
+
+  alert("Workers assigned successfully.");
+  location.reload();
+}
+
+function filterManpowerRequests() {
+  const keyword = qs("#manpowerRequestSearch").value.toLowerCase();
+
+  const filtered = (window.manpowerRequestsData || []).filter((r) =>
+    `${r.project?.name || ""} ${r.position} ${r.status} ${r.reason}`
+      .toLowerCase()
+      .includes(keyword),
+  );
+
+  renderManpowerRequestsTable(filtered);
+}
+
+function manpowerRequestForm() {
+  modal(`
+    <h3>Request Additional Manpower</h3>
+
+    <form onsubmit="saveManpowerRequest(event)">
+      <label>Project</label>
+      <select name="project" required>
+        ${window.manpowerRequestProjectOptions}
+      </select>
+
+      <div class="form-grid">
+        <select name="position" required>
+          <option>Skilled</option>
+          <option>Helper</option>
+          <option>Engineer</option>
+          <option>Operator</option>
+        </select>
+
+        <input name="quantityNeeded" type="number" min="1" placeholder="Quantity needed" required>
+
+        <div>
+  <label>Start Date</label>
+  <input name="assignmentStartDate" type="date" required>
+</div>
+
+<div>
+  <label>End Date</label>
+  <input name="assignmentEndDate" type="date" required>
+</div>
+      </div>
+
+      <textarea name="reason" placeholder="Reason / activity, e.g. concrete pouring tomorrow"></textarea>
+
+      <button class="btn">Submit Request</button>
+    </form>
+  `);
+}
+
+async function saveManpowerRequest(e) {
+  e.preventDefault();
+
+  const data = Object.fromEntries(new FormData(e.target));
+
+  await api("/api/manpower-requests", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  alert("Manpower request submitted.");
+  location.reload();
+}
+
+async function reviewManpowerRequest(id, action) {
+  const adminRemarks = prompt(
+    "Admin remarks:",
+    action === "approve" ? "Approved" : "Rejected",
+  );
+
+  if (adminRemarks === null) return;
+
+  await api(`/api/manpower-requests/${id}/${action}`, {
+    method: "PUT",
+    body: JSON.stringify({ adminRemarks }),
+  });
+
+  alert(`Request ${action}d.`);
+  location.reload();
 }

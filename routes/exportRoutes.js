@@ -5,6 +5,7 @@ const c = require("../controllers/exportController");
 router.get("/reports-excel", protect, c.exportReportsExcel);
 router.get("/expenses-excel", protect, c.exportExpensesExcel);
 router.get("/manpower-excel", protect, c.exportManpowerExcel);
+router.get("/manpower-plans-excel", protect, c.exportManpowerPlansExcel);
 router.get("/material-requests-excel", protect, c.exportMaterialRequestsExcel);
 
 router.get("/report-pdf/:id", protect, c.exportReportPdf);

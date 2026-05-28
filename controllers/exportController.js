@@ -2,6 +2,8 @@ const ExcelJS = require("exceljs");
 
 const DailyReport = require("../models/DailyReport");
 const Expense = require("../models/Expense");
+const ManpowerPlan = require("../models/ManpowerPlan");
+const ManpowerAttendance = require("../models/ManpowerAttendance");
 const Manpower = require("../models/Manpower");
 const MaterialRequest = require("../models/MaterialRequest");
 const PDFDocument = require("pdfkit");
@@ -552,6 +554,216 @@ exports.exportExpenseRequestsExcel = async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: "Failed to export expense requests.",
+      error: error.message,
+    });
+  }
+};
+
+// =====================
+// PLANNED VS ACTUAL MANPOWER EXCEL
+// =====================
+exports.exportManpowerPlansExcel = async (req, res) => {
+  try {
+    const filter = {};
+
+    if (req.query.project) {
+      filter.project = req.query.project;
+    }
+
+    const plans = await ManpowerPlan.find(filter)
+      .populate("project", "name")
+      .sort({ date: -1 });
+
+    const attendance = await ManpowerAttendance.find(filter)
+      .populate("project", "name")
+      .sort({ date: -1 });
+
+    const attendanceMap = {};
+
+    attendance.forEach((a) => {
+      const key = `${String(a.project?._id || a.project)}-${new Date(a.date)
+        .toISOString()
+        .slice(0, 10)}`;
+
+      if (!attendanceMap[key]) {
+        attendanceMap[key] = {
+          skilledWorkers: 0,
+          helpers: 0,
+          engineers: 0,
+          operators: 0,
+        };
+      }
+
+      (a.workers || []).forEach((w) => {
+        if (!["Present", "Late", "Half Day"].includes(w.status)) return;
+
+        if (w.position === "Skilled") {
+          attendanceMap[key].skilledWorkers += 1;
+        }
+
+        if (w.position === "Helper") {
+          attendanceMap[key].helpers += 1;
+        }
+
+        if (w.position === "Engineer") {
+          attendanceMap[key].engineers += 1;
+        }
+
+        if (w.position === "Operator") {
+          attendanceMap[key].operators += 1;
+        }
+      });
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Planned vs Actual Manpower");
+
+    worksheet.columns = [
+      { header: "Project", key: "project", width: 25 },
+      { header: "Date", key: "date", width: 15 },
+      { header: "Activity", key: "activity", width: 30 },
+
+      { header: "Planned Skilled", key: "plannedSkilled", width: 18 },
+      { header: "Actual Skilled", key: "actualSkilled", width: 18 },
+      { header: "Skilled Shortage", key: "shortageSkilled", width: 18 },
+
+      { header: "Planned Helpers", key: "plannedHelpers", width: 18 },
+      { header: "Actual Helpers", key: "actualHelpers", width: 18 },
+      { header: "Helpers Shortage", key: "shortageHelpers", width: 18 },
+
+      { header: "Planned Engineers", key: "plannedEngineers", width: 18 },
+      { header: "Actual Engineers", key: "actualEngineers", width: 18 },
+      { header: "Engineers Shortage", key: "shortageEngineers", width: 18 },
+
+      { header: "Planned Operators", key: "plannedOperators", width: 18 },
+      { header: "Actual Operators", key: "actualOperators", width: 18 },
+      { header: "Operators Shortage", key: "shortageOperators", width: 18 },
+
+      { header: "Total Planned", key: "plannedTotal", width: 18 },
+      { header: "Total Actual", key: "actualTotal", width: 18 },
+      { header: "Total Shortage", key: "shortage", width: 18 },
+      { header: "Delay Risk", key: "delayRisk", width: 18 },
+      { header: "Status", key: "status", width: 18 },
+      { header: "Remarks", key: "remarks", width: 35 },
+    ];
+
+    plans.forEach((p) => {
+      const key = `${String(p.project?._id || p.project)}-${new Date(p.date)
+        .toISOString()
+        .slice(0, 10)}`;
+
+      const actual = attendanceMap[key] || {
+        skilledWorkers: 0,
+        helpers: 0,
+        engineers: 0,
+        operators: 0,
+      };
+
+      const shortages = {
+        skilledWorkers: Math.max(
+          0,
+          Number(p.skilledWorkers || 0) - Number(actual.skilledWorkers || 0),
+        ),
+        helpers: Math.max(
+          0,
+          Number(p.helpers || 0) - Number(actual.helpers || 0),
+        ),
+        engineers: Math.max(
+          0,
+          Number(p.engineers || 0) - Number(actual.engineers || 0),
+        ),
+        operators: Math.max(
+          0,
+          Number(p.operators || 0) - Number(actual.operators || 0),
+        ),
+      };
+
+      const plannedTotal =
+        Number(p.skilledWorkers || 0) +
+        Number(p.helpers || 0) +
+        Number(p.engineers || 0) +
+        Number(p.operators || 0);
+
+      const actualTotal =
+        Number(actual.skilledWorkers || 0) +
+        Number(actual.helpers || 0) +
+        Number(actual.engineers || 0) +
+        Number(actual.operators || 0);
+
+      const shortage =
+        shortages.skilledWorkers +
+        shortages.helpers +
+        shortages.engineers +
+        shortages.operators;
+
+      let delayRisk = "Low";
+
+      if (plannedTotal > 0) {
+        const shortageRate = shortage / plannedTotal;
+
+        if (shortageRate >= 0.5) {
+          delayRisk = "High";
+        } else if (shortageRate >= 0.25) {
+          delayRisk = "Medium";
+        }
+      }
+
+      worksheet.addRow({
+        project: p.project?.name || "",
+        date: p.date ? new Date(p.date).toISOString().slice(0, 10) : "",
+        activity: p.activity || "",
+
+        plannedSkilled: p.skilledWorkers || 0,
+        actualSkilled: actual.skilledWorkers || 0,
+        shortageSkilled: shortages.skilledWorkers,
+
+        plannedHelpers: p.helpers || 0,
+        actualHelpers: actual.helpers || 0,
+        shortageHelpers: shortages.helpers,
+
+        plannedEngineers: p.engineers || 0,
+        actualEngineers: actual.engineers || 0,
+        shortageEngineers: shortages.engineers,
+
+        plannedOperators: p.operators || 0,
+        actualOperators: actual.operators || 0,
+        shortageOperators: shortages.operators,
+
+        plannedTotal,
+        actualTotal,
+        shortage,
+        delayRisk,
+
+        status:
+          shortage > 0
+            ? "Shortage"
+            : actualTotal > plannedTotal
+              ? "Overstaffed"
+              : "Balanced",
+
+        remarks: p.remarks || "",
+      });
+    });
+
+    worksheet.getRow(1).font = {
+      bold: true,
+    };
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=planned-vs-actual-manpower.xlsx",
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to export manpower comparison.",
       error: error.message,
     });
   }

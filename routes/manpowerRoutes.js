@@ -1,9 +1,9 @@
 const router = require("express").Router();
 const { protect } = require("../middleware/authMiddleware");
-const c = require("../controllers/manpowerController");
+const manpowerController = require("../controllers/manpowerController");
 
-router.get("/", protect, c.getManpower);
-router.post("/", protect, c.createManpower);
-router.delete("/:id", protect, c.deleteManpower);
+router.get("/", protect, manpowerController.getManpower);
+router.post("/", protect, manpowerController.createManpower);
+router.delete("/:id", protect, manpowerController.deleteManpower);
 
 module.exports = router;
