@@ -1,19 +1,49 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
-const expenseSchema = new mongoose.Schema({
-  project: { type: mongoose.Schema.Types.ObjectId, ref: 'Project', required: true },
-  date: { type: Date, required: true },
-  laborCost: { type: Number, default: 0 },
-  materialCost: { type: Number, default: 0 },
-  equipmentCost: { type: Number, default: 0 },
-  otherExpenses: { type: Number, default: 0 },
-  remarks: { type: String, default: '' },
-}, { timestamps: true });
+const expenseSchema = new mongoose.Schema(
+  {
+    project: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Project",
+      required: true,
+    },
+    date: { type: Date, required: true },
+    laborCost: { type: Number, default: 0 },
+    materialCost: { type: Number, default: 0 },
+    equipmentCost: { type: Number, default: 0 },
+    otherExpenses: { type: Number, default: 0 },
+    remarks: { type: String, default: "" },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
 
-expenseSchema.virtual('totalExpense').get(function() {
-  return this.laborCost + this.materialCost + this.equipmentCost + this.otherExpenses;
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
+    expenseRequest: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ExpenseRequest",
+    },
+
+    status: {
+      type: String,
+      enum: ["Recorded", "From Request"],
+      default: "Recorded",
+    },
+  },
+
+  { timestamps: true },
+);
+
+expenseSchema.virtual("totalExpense").get(function () {
+  return (
+    this.laborCost + this.materialCost + this.equipmentCost + this.otherExpenses
+  );
 });
-expenseSchema.set('toJSON', { virtuals: true });
-expenseSchema.set('toObject', { virtuals: true });
+expenseSchema.set("toJSON", { virtuals: true });
+expenseSchema.set("toObject", { virtuals: true });
 
-module.exports = mongoose.model('Expense', expenseSchema);
+module.exports = mongoose.model("Expense", expenseSchema);

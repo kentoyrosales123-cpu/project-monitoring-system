@@ -4,8 +4,25 @@ const DailyReport = require("../models/DailyReport");
 const Manpower = require("../models/Manpower");
 const Equipment = require("../models/Equipment");
 
-const projectFilter = (user) =>
-  user.role === "admin" ? {} : { assignedStaff: user._id };
+const projectFilter = (user) => {
+  if (["admin", "inventory"].includes(user.role)) {
+    return {};
+  }
+
+  if (user.role === "staff") {
+    return {
+      assignedStaff: user._id,
+    };
+  }
+
+  if (user.role === "client") {
+    return {
+      clientUser: user._id,
+    };
+  }
+
+  return {};
+};
 
 exports.getProjects = async (req, res) => {
   try {
@@ -50,6 +67,50 @@ exports.updateProject = async (req, res) => {
     }
 
     res.json(project);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+exports.updateProgress = async (req, res) => {
+  try {
+    const { progress, status } = req.body;
+
+    const project = await Project.findById(req.params.id);
+
+    if (!project) {
+      return res.status(404).json({ message: "Project not found." });
+    }
+
+    const isAdmin = req.user.role === "admin";
+    const isAssignedStaff = project.assignedStaff.some(
+      (staffId) => String(staffId) === String(req.user._id),
+    );
+
+    if (!isAdmin && !isAssignedStaff) {
+      return res.status(403).json({
+        message: "Only admin or assigned staff can update project progress.",
+      });
+    }
+
+    const newProgress = Math.min(100, Math.max(0, Number(progress || 0)));
+
+    project.progress = newProgress;
+
+    if (status) {
+      project.status = status;
+    }
+
+    if (newProgress === 100) {
+      project.status = "Completed";
+    }
+
+    await project.save();
+
+    res.json({
+      message: "Project progress updated.",
+      project,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -245,5 +306,32 @@ exports.dashboardStats = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+exports.getMyProjects = async (req, res) => {
+  try {
+    let projects;
+
+    // staff only sees assigned projects
+    if (req.user.role === "staff") {
+      projects = await Project.find({
+        assignedStaff: req.user._id,
+      })
+        .populate("assignedStaff", "name email role")
+        .sort({ createdAt: -1 });
+    } else {
+      // admin/inventory/client
+      projects = await Project.find()
+        .populate("assignedStaff", "name email role")
+        .sort({ createdAt: -1 });
+    }
+
+    res.json(projects);
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to load projects",
+      error: error.message,
+    });
   }
 };

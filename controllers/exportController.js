@@ -3,6 +3,9 @@ const ExcelJS = require("exceljs");
 const DailyReport = require("../models/DailyReport");
 const Expense = require("../models/Expense");
 const Manpower = require("../models/Manpower");
+const MaterialRequest = require("../models/MaterialRequest");
+const PDFDocument = require("pdfkit");
+const ExpenseRequest = require("../models/ExpenseRequest");
 
 // =====================
 // DAILY REPORT EXCEL
@@ -166,5 +169,390 @@ exports.exportManpowerExcel = async (req, res) => {
     res.end();
   } catch (error) {
     res.status(500).json({ message: error.message });
+  }
+};
+
+// =====================
+// MATERIAL REQUESTS EXCEL
+// =====================
+exports.exportMaterialRequestsExcel = async (req, res) => {
+  try {
+    const requests = await MaterialRequest.find()
+      .populate("project", "name")
+      .populate("requestedBy", "name");
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Material Requests");
+
+    worksheet.columns = [
+      { header: "Project", key: "project", width: 25 },
+      { header: "Material", key: "material", width: 25 },
+      { header: "Quantity", key: "quantity", width: 15 },
+      { header: "Unit", key: "unit", width: 15 },
+      { header: "Purpose", key: "purpose", width: 30 },
+      { header: "Status", key: "status", width: 20 },
+      { header: "Requested By", key: "requestedBy", width: 25 },
+      { header: "Requested Date", key: "date", width: 20 },
+    ];
+
+    requests.forEach((r) => {
+      worksheet.addRow({
+        project: r.project?.name || "",
+        material: r.materialName || "",
+        quantity: r.quantity || 0,
+        unit: r.unit || "",
+        purpose: r.purpose || "",
+        status: r.status || "",
+        requestedBy: r.requestedBy?.name || "",
+        date: r.createdAt
+          ? new Date(r.createdAt).toISOString().slice(0, 10)
+          : "",
+      });
+    });
+
+    worksheet.getRow(1).font = { bold: true };
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=material-requests.xlsx",
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
+};
+
+exports.exportReportPdf = async (req, res) => {
+  try {
+    const report = await DailyReport.findById(req.params.id)
+      .populate("project", "name")
+      .populate("submittedBy", "name")
+      .populate("confirmedBy", "name")
+      .populate("reviewedBy", "name");
+
+    if (!report) {
+      return res.status(404).json({ message: "Report not found." });
+    }
+
+    const doc = new PDFDocument({ margin: 40 });
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=daily-report-${report._id}.pdf`,
+    );
+
+    doc.pipe(res);
+
+    doc.fontSize(20).text("Daily Report", { align: "center" });
+    doc.moveDown();
+
+    doc.fontSize(11);
+    doc.text(`Project: ${report.project?.name || "-"}`);
+    doc.text(`Date: ${new Date(report.reportDate).toISOString().slice(0, 10)}`);
+    doc.text(
+      `Status: ${report.status || (report.isConfirmed ? "Confirmed" : "Pending")}`,
+    );
+    doc.text(`Submitted By: ${report.submittedBy?.name || "-"}`);
+    doc.text(`Weather: ${report.weatherCondition || "-"}`);
+    doc.moveDown();
+
+    doc.fontSize(14).text("Work Accomplished", { underline: true });
+    doc.fontSize(11).text(report.workAccomplished || "-");
+    doc.moveDown();
+
+    doc.fontSize(14).text("Manpower", { underline: true });
+    (report.manpower || []).forEach((m) => {
+      doc.fontSize(11).text(`- ${m.position || "-"}: ${m.quantity || 0}`);
+    });
+    doc.moveDown();
+
+    doc.fontSize(14).text("Equipment Used", { underline: true });
+    (report.equipmentUsed || []).forEach((e) => {
+      doc
+        .fontSize(11)
+        .text(
+          `- ${e.equipmentName || "-"} | Qty: ${e.quantity || 0} | ${e.remarks || ""}`,
+        );
+    });
+    doc.moveDown();
+
+    doc.fontSize(14).text("Materials Used", { underline: true });
+    (report.materialsUsed || []).forEach((m) => {
+      doc
+        .fontSize(11)
+        .text(
+          `- ${m.materialName || "-"} | ${m.quantity || 0} ${m.unit || ""}`,
+        );
+    });
+    doc.moveDown();
+
+    doc.fontSize(14).text("Issues Encountered", { underline: true });
+    doc.fontSize(11).text(report.issuesEncountered || "None");
+    doc.moveDown();
+
+    doc.fontSize(14).text("Safety Incidents", { underline: true });
+    doc.fontSize(11).text(report.safetyIncidents || "None");
+    doc.moveDown();
+
+    doc.fontSize(14).text("Remarks", { underline: true });
+    doc.fontSize(11).text(report.remarks || "None");
+    doc.moveDown();
+
+    doc.fontSize(14).text("Admin Comments", { underline: true });
+    doc.fontSize(11).text(report.adminComments || "None");
+    doc.moveDown();
+
+    doc.text(`Reviewed By: ${report.reviewedBy?.name || "-"}`);
+    doc.text(
+      `Reviewed At: ${
+        report.reviewedAt ? new Date(report.reviewedAt).toLocaleString() : "-"
+      }`,
+    );
+
+    doc.end();
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+exports.exportExpenseRequestsExcel = async (req, res) => {
+  try {
+    const filter = {};
+
+    if (req.query.project) {
+      filter.project = req.query.project;
+    }
+
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+
+    if (req.query.project) {
+      filter.project = req.query.project;
+    }
+
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+
+    if (req.query.category) {
+      filter.category = req.query.category;
+    }
+
+    if (req.query.from || req.query.to) {
+      filter.createdAt = {};
+
+      if (req.query.from) {
+        filter.createdAt.$gte = new Date(req.query.from);
+      }
+
+      if (req.query.to) {
+        const toDate = new Date(req.query.to);
+        toDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = toDate;
+      }
+    }
+
+    if (req.query.category) {
+      filter.category = req.query.category;
+    }
+
+    if (req.query.from || req.query.to) {
+      filter.createdAt = {};
+
+      if (req.query.from) {
+        filter.createdAt.$gte = new Date(req.query.from);
+      }
+
+      if (req.query.to) {
+        const toDate = new Date(req.query.to);
+        toDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = toDate;
+      }
+    }
+
+    const rows = await ExpenseRequest.find(filter)
+      .populate("project", "name")
+      .populate("requestedBy", "name")
+      .populate("reviewedBy", "name")
+      .sort({ createdAt: -1 });
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Expense Requests");
+
+    sheet.columns = [
+      { header: "Date Requested", key: "dateRequested", width: 20 },
+      { header: "Project", key: "project", width: 25 },
+      { header: "Category", key: "category", width: 18 },
+      { header: "Description", key: "description", width: 35 },
+      { header: "Reason", key: "reason", width: 35 },
+      { header: "Amount", key: "amount", width: 15 },
+      { header: "Status", key: "status", width: 15 },
+      { header: "Requested By", key: "requestedBy", width: 22 },
+      { header: "Reviewed By", key: "reviewedBy", width: 22 },
+      { header: "Admin Remarks", key: "adminRemarks", width: 35 },
+    ];
+
+    sheet.getRow(1).font = { bold: true };
+
+    rows.forEach((r) => {
+      sheet.addRow({
+        dateRequested: r.createdAt
+          ? new Date(r.createdAt).toLocaleString("en-PH")
+          : "",
+        project: r.project?.name || "",
+        category: r.category || "",
+        description: r.description || "",
+        reason: r.reason || "",
+        amount: Number(r.amount || 0),
+        status: r.status || "",
+        requestedBy: r.requestedBy?.name || "",
+        reviewedBy: r.reviewedBy?.name || "",
+        adminRemarks: r.adminRemarks || "",
+      });
+    });
+
+    sheet.addRow([]);
+    sheet.addRow([
+      "Total Amount",
+      "",
+      "",
+      "",
+      "",
+      rows.reduce((sum, r) => sum + Number(r.amount || 0), 0),
+    ]);
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=expense-requests.xlsx",
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to export expense requests.",
+      error: error.message,
+    });
+  }
+};
+
+// =====================
+// EXPENSE REQUESTS EXCEL
+// =====================
+exports.exportExpenseRequestsExcel = async (req, res) => {
+  try {
+    const filter = {};
+
+    if (req.query.project) {
+      filter.project = req.query.project;
+    }
+
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+
+    if (req.query.category) {
+      filter.category = req.query.category;
+    }
+
+    if (req.query.from || req.query.to) {
+      filter.createdAt = {};
+
+      if (req.query.from) {
+        filter.createdAt.$gte = new Date(req.query.from);
+      }
+
+      if (req.query.to) {
+        const toDate = new Date(req.query.to);
+        toDate.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = toDate;
+      }
+    }
+
+    const rows = await ExpenseRequest.find(filter)
+      .populate("project", "name")
+      .populate("requestedBy", "name")
+      .populate("reviewedBy", "name")
+      .sort({ createdAt: -1 });
+
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Expense Requests");
+
+    sheet.columns = [
+      { header: "Date Requested", key: "dateRequested", width: 20 },
+      { header: "Project", key: "project", width: 25 },
+      { header: "Category", key: "category", width: 18 },
+      { header: "Description", key: "description", width: 35 },
+      { header: "Reason", key: "reason", width: 35 },
+      { header: "Amount", key: "amount", width: 15 },
+      { header: "Status", key: "status", width: 15 },
+      { header: "Requested By", key: "requestedBy", width: 22 },
+      { header: "Reviewed By", key: "reviewedBy", width: 22 },
+      { header: "Admin Remarks", key: "adminRemarks", width: 35 },
+    ];
+
+    sheet.getRow(1).font = { bold: true };
+
+    rows.forEach((r) => {
+      sheet.addRow({
+        dateRequested: r.createdAt
+          ? new Date(r.createdAt).toLocaleString("en-PH")
+          : "",
+        project: r.project?.name || "",
+        category: r.category || "",
+        description: r.description || "",
+        reason: r.reason || "",
+        amount: Number(r.amount || 0),
+        status: r.status || "",
+        requestedBy: r.requestedBy?.name || "",
+        reviewedBy: r.reviewedBy?.name || "",
+        adminRemarks: r.adminRemarks || "",
+      });
+    });
+
+    sheet.addRow([]);
+
+    sheet.addRow([
+      "TOTAL",
+      "",
+      "",
+      "",
+      "",
+      rows.reduce((sum, r) => sum + Number(r.amount || 0), 0),
+    ]);
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=expense-requests.xlsx",
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to export expense requests.",
+      error: error.message,
+    });
   }
 };
