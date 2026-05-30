@@ -2,6 +2,7 @@ const DailyReport = require("../models/DailyReport");
 const User = require("../models/User");
 const Notification = require("../models/Notification");
 const cloudinary = require("../config/cloudinary");
+const Project = require("../models/Project");
 
 function parseJsonArray(value) {
   if (!value) return [];
@@ -16,7 +17,19 @@ function parseJsonArray(value) {
 
 exports.getReports = async (req, res) => {
   try {
-    const reports = await DailyReport.find()
+    let query = {};
+
+    if (req.user.role === "staff") {
+      const myProjects = await Project.find({
+        assignedStaff: req.user._id,
+      }).select("_id");
+
+      query.project = {
+        $in: myProjects.map((p) => p._id),
+      };
+    }
+
+    const reports = await DailyReport.find(query)
       .populate("project", "name")
       .populate("submittedBy", "name")
       .populate("confirmedBy", "name")

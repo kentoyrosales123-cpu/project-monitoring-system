@@ -36,6 +36,7 @@ const notificationSchema = new mongoose.Schema(
         "worker_unassigned",
         "daily_report",
         "issue_risk",
+        "project_assigned",
       ],
       default: "material_request",
     },
