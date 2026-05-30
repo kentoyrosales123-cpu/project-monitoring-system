@@ -2,20 +2,53 @@ const mongoose = require("mongoose");
 
 const workerSchema = new mongoose.Schema(
   {
-    workerName: { type: String, required: true },
-    position: {
-      type: String,
-      enum: ["Skilled", "Helper", "Engineer", "Operator"],
+    worker: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Worker",
       required: true,
     },
+
+    workerName: {
+      type: String,
+      required: true,
+    },
+
+    position: {
+      type: String,
+      enum: [
+        "Foreman",
+        "Mason",
+        "Carpenter",
+        "Steelman",
+        "Electrician",
+        "Plumber",
+        "Helper",
+        "Engineer",
+        "Operator",
+      ],
+      required: true,
+    },
+
     status: {
       type: String,
       enum: ["Present", "Absent", "Late", "Half Day", "Leave"],
       default: "Present",
     },
-    overtimeHours: { type: Number, default: 0 },
-    ratePerDay: { type: Number, default: 0 },
-    remarks: { type: String, default: "" },
+
+    overtimeHours: {
+      type: Number,
+      default: 0,
+    },
+
+    ratePerDay: {
+      type: Number,
+      default: 0,
+    },
+
+    remarks: {
+      type: String,
+      default: "",
+    },
   },
   { _id: false },
 );

@@ -1,4 +1,7 @@
 const DailyReport = require("../models/DailyReport");
+const User = require("../models/User");
+const Notification = require("../models/Notification");
+const cloudinary = require("../config/cloudinary");
 
 function parseJsonArray(value) {
   if (!value) return [];
@@ -28,7 +31,10 @@ exports.getReports = async (req, res) => {
 
 exports.createReport = async (req, res) => {
   try {
-    const photos = (req.files || []).map((file) => `/uploads/${file.filename}`);
+    const photos = (req.files || []).map((file) => ({
+      url: file.path,
+      publicId: file.filename,
+    }));
 
     const report = await DailyReport.create({
       project: req.body.project,
@@ -52,6 +58,24 @@ exports.createReport = async (req, res) => {
       adminComments: "",
     });
 
+    await report.populate("project", "name");
+
+    const admins = await User.find({ role: "admin" }).select("_id");
+
+    if (admins.length) {
+      await Notification.insertMany(
+        admins.map((admin) => ({
+          user: admin._id,
+          title: "📋 New Daily Report Submitted",
+          message: `${req.user.name || "A staff member"} submitted a daily report for ${
+            report.project?.name || "a project"
+          }.`,
+          type: "daily_report",
+          isRead: false,
+        })),
+      );
+    }
+
     res.status(201).json(report);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -60,13 +84,21 @@ exports.createReport = async (req, res) => {
 
 exports.deleteReport = async (req, res) => {
   try {
-    const report = await DailyReport.findByIdAndDelete(req.params.id);
+    const report = await DailyReport.findById(req.params.id);
 
     if (!report) {
       return res.status(404).json({ message: "Report not found." });
     }
 
-    res.json({ message: "Report deleted." });
+    for (const photo of report.photos || []) {
+      if (photo.publicId) {
+        await cloudinary.uploader.destroy(photo.publicId);
+      }
+    }
+
+    await report.deleteOne();
+
+    res.json({ message: "Report and photos deleted." });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -100,6 +132,15 @@ exports.confirmReport = async (req, res) => {
     }
 
     await report.save();
+
+    // Notify the staff who submitted the report
+    await Notification.create({
+      user: report.submittedBy,
+      title: "✅ Daily Report Confirmed",
+      message: "Your daily report has been confirmed by the admin.",
+      type: "daily_report",
+      isRead: false,
+    });
 
     res.json({
       message: "Daily report confirmed successfully.",
@@ -139,6 +180,17 @@ exports.needsRevisionReport = async (req, res) => {
     report.confirmedAt = undefined;
 
     await report.save();
+
+    // Notify the staff who submitted the report
+    await Notification.create({
+      user: report.submittedBy,
+      title: "✏️ Daily Report Needs Revision",
+      message:
+        req.body.adminComments ||
+        "Your daily report needs revision. Please update and resubmit.",
+      type: "daily_report",
+      isRead: false,
+    });
 
     res.json({
       message: "Daily report marked as Needs Revision.",
@@ -189,9 +241,10 @@ exports.updateReport = async (req, res) => {
     report.safetyIncidents = req.body.safetyIncidents || "";
     report.remarks = req.body.remarks || "";
 
-    const newPhotos = (req.files || []).map(
-      (file) => `/uploads/${file.filename}`,
-    );
+    const newPhotos = (req.files || []).map((file) => ({
+      url: file.path,
+      publicId: file.filename,
+    }));
 
     if (newPhotos.length) {
       report.photos = [...report.photos, ...newPhotos];
@@ -200,6 +253,21 @@ exports.updateReport = async (req, res) => {
     if (report.status === "Needs Revision") {
       report.status = "Pending";
       report.isConfirmed = false;
+    }
+
+    // If admin edits the report, notify staff
+    if (
+      req.user.role === "admin" &&
+      report.submittedBy.toString() !== req.user._id.toString()
+    ) {
+      await Notification.create({
+        user: report.submittedBy,
+        title: "📋 Daily Report Updated",
+        message:
+          "An admin updated your daily report. Please review the changes.",
+        type: "daily_report",
+        isRead: false,
+      });
     }
 
     await report.save();

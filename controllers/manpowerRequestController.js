@@ -1,6 +1,8 @@
 const ManpowerRequest = require("../models/ManpowerRequest");
 const Project = require("../models/Project");
 const Worker = require("../models/Worker");
+const User = require("../models/User");
+const createNotification = require("../utils/createNotification");
 
 const getAllowedProjectIds = async (user) => {
   if (["admin", "inventory"].includes(user.role)) {
@@ -75,6 +77,19 @@ exports.createRequest = async (req, res) => {
       requestedBy: req.user._id,
     });
 
+    const adminUsers = await User.find({
+      role: { $in: ["admin", "inventory"] },
+    });
+
+    for (const admin of adminUsers) {
+      await createNotification({
+        user: admin._id,
+        title: "New Manpower Request",
+        message: `${req.user.name} requested ${request.quantityNeeded} ${request.position} worker(s).`,
+        type: "material_request",
+      });
+    }
+
     res.status(201).json(request);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -105,6 +120,19 @@ exports.reviewRequest = async (req, res) => {
     request.adminRemarks = req.body.adminRemarks || "";
 
     await request.save();
+
+    await createNotification({
+      user: request.requestedBy,
+      title:
+        request.status === "Approved"
+          ? "Manpower Request Approved"
+          : "Manpower Request Rejected",
+      message:
+        request.status === "Approved"
+          ? "Your manpower request has been approved."
+          : "Your manpower request has been rejected.",
+      type: request.status === "Approved" ? "approved" : "rejected",
+    });
 
     res.json(request);
   } catch (error) {
@@ -161,6 +189,23 @@ exports.markAssigned = async (req, res) => {
       },
     );
 
+    const assignedWorkers = await Worker.find({
+      _id: { $in: selectedWorkerIds },
+    }).populate("user", "name");
+
+    const project = await Project.findById(request.project).select("name");
+
+    for (const worker of assignedWorkers) {
+      if (!worker.user) continue;
+
+      await createNotification({
+        user: worker.user._id,
+        title: "Assigned to Project",
+        message: `You have been assigned to ${project?.name || "a project"}.`,
+        type: "worker_assigned",
+      });
+    }
+
     request.status = "Assigned";
     request.reviewedBy = req.user._id;
     request.assignedWorkers = selectedWorkerIds;
@@ -168,6 +213,13 @@ exports.markAssigned = async (req, res) => {
       req.body.adminRemarks || "Workers manually assigned.";
 
     await request.save();
+
+    await createNotification({
+      user: request.requestedBy,
+      title: "Worker Assigned",
+      message: `${selectedWorkerIds.length} worker(s) have been assigned to your manpower request.`,
+      type: "worker_assigned",
+    });
 
     res.json({
       message: "Workers assigned successfully.",
@@ -186,11 +238,17 @@ exports.unassignWorkers = async (req, res) => {
       });
     }
 
-    const request = await ManpowerRequest.findById(req.params.id);
+    const request = await ManpowerRequest.findById(req.params.id).populate(
+      "assignedWorkers",
+      "fullName user",
+    );
 
     if (!request) {
       return res.status(404).json({ message: "Request not found." });
     }
+
+    const project = await Project.findById(request.project).select("name");
+    const workersBeforeUnassign = request.assignedWorkers || [];
 
     await Worker.updateMany(
       { _id: { $in: request.assignedWorkers || [] } },
@@ -205,6 +263,24 @@ exports.unassignWorkers = async (req, res) => {
     request.adminRemarks = req.body.adminRemarks || "Workers unassigned.";
 
     await request.save();
+
+    await createNotification({
+      user: request.requestedBy,
+      title: "Worker Unassigned",
+      message: `${workersBeforeUnassign.length} worker(s) have been unassigned from your manpower request.`,
+      type: "worker_unassigned",
+    });
+
+    for (const worker of workersBeforeUnassign) {
+      if (!worker.user) continue;
+
+      await createNotification({
+        user: worker.user,
+        title: "Removed from Project",
+        message: `You have been unassigned from ${project?.name || "the project"}.`,
+        type: "worker_unassigned",
+      });
+    }
 
     res.json({
       message: "Workers unassigned successfully.",

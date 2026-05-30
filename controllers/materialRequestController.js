@@ -40,7 +40,7 @@ exports.createRequest = async (req, res) => {
 
     // notify inventory officers
     const inventoryUsers = await User.find({
-      role: "inventory",
+      role: { $in: ["admin", "inventory"] },
     });
 
     for (const inv of inventoryUsers) {
@@ -260,7 +260,7 @@ exports.confirmReceived = async (req, res) => {
     await request.save();
 
     const inventoryUsers = await User.find({
-      role: "inventory",
+      role: { $in: ["admin", "inventory"] },
     });
 
     for (const inv of inventoryUsers) {

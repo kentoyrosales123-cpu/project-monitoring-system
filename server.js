@@ -15,6 +15,7 @@ const materialRoutes = require("./routes/materialRoutes");
 
 const manpowerRequestController = require("./controllers/manpowerRequestController");
 const manpowerPlanRoutes = require("./routes/manpowerPlanRoutes");
+const productivityRoutes = require("./routes/productivityRoutes");
 
 dotenv.config();
 connectDB();
@@ -69,6 +70,7 @@ app.use(
 
 app.use("/api/export", require("./routes/exportRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
+app.use("/api/productivity", productivityRoutes);
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));

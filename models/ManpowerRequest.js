@@ -9,7 +9,17 @@ const manpowerRequestSchema = new mongoose.Schema(
     },
     position: {
       type: String,
-      enum: ["Skilled", "Helper", "Engineer", "Operator"],
+      enum: [
+        "Foreman",
+        "Mason",
+        "Carpenter",
+        "Steelman",
+        "Electrician",
+        "Plumber",
+        "Helper",
+        "Engineer",
+        "Operator",
+      ],
       required: true,
     },
     quantityNeeded: { type: Number, required: true },
@@ -17,7 +27,7 @@ const manpowerRequestSchema = new mongoose.Schema(
     reason: { type: String, default: "" },
     status: {
       type: String,
-      enum: ["Pending", "Approved", "Rejected", "Assigned"],
+      enum: ["Pending", "Approved", "Rejected", "Assigned", "Completed"],
       default: "Pending",
     },
     requestedBy: {

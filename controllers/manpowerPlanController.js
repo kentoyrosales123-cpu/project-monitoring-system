@@ -59,10 +59,18 @@ exports.createPlan = async (req, res) => {
       project: req.body.project,
       date: req.body.date,
       activity: req.body.activity,
-      skilledWorkers: Number(req.body.skilledWorkers || 0),
+
+      foreman: Number(req.body.foreman || 0),
+      mason: Number(req.body.mason || 0),
+      carpenter: Number(req.body.carpenter || 0),
+      steelman: Number(req.body.steelman || 0),
+      electrician: Number(req.body.electrician || 0),
+      plumber: Number(req.body.plumber || 0),
+
       helpers: Number(req.body.helpers || 0),
       engineers: Number(req.body.engineers || 0),
       operators: Number(req.body.operators || 0),
+
       remarks: req.body.remarks || "",
       encodedBy: req.user._id,
     });
@@ -128,10 +136,17 @@ exports.comparison = async (req, res) => {
 
       if (!attendanceMap[key]) {
         attendanceMap[key] = {
-          skilledWorkers: 0,
+          foreman: 0,
+          mason: 0,
+          carpenter: 0,
+          steelman: 0,
+          electrician: 0,
+          plumber: 0,
+
           helpers: 0,
           engineers: 0,
           operators: 0,
+
           totalPresent: 0,
         };
       }
@@ -139,7 +154,13 @@ exports.comparison = async (req, res) => {
       (a.workers || []).forEach((w) => {
         if (!["Present", "Late", "Half Day"].includes(w.status)) return;
 
-        if (w.position === "Skilled") attendanceMap[key].skilledWorkers += 1;
+        if (w.position === "Foreman") attendanceMap[key].foreman += 1;
+        if (w.position === "Mason") attendanceMap[key].mason += 1;
+        if (w.position === "Carpenter") attendanceMap[key].carpenter += 1;
+        if (w.position === "Steelman") attendanceMap[key].steelman += 1;
+        if (w.position === "Electrician") attendanceMap[key].electrician += 1;
+        if (w.position === "Plumber") attendanceMap[key].plumber += 1;
+
         if (w.position === "Helper") attendanceMap[key].helpers += 1;
         if (w.position === "Engineer") attendanceMap[key].engineers += 1;
         if (w.position === "Operator") attendanceMap[key].operators += 1;

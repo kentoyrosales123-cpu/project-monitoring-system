@@ -3,6 +3,8 @@ const Expense = require("../models/Expense");
 const DailyReport = require("../models/DailyReport");
 const Manpower = require("../models/Manpower");
 const Equipment = require("../models/Equipment");
+const Worker = require("../models/Worker");
+const Task = require("../models/Task");
 
 const projectFilter = (user) => {
   if (["admin", "inventory"].includes(user.role)) {
@@ -148,10 +150,6 @@ exports.dashboardStats = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(5);
 
-    const manpower = await Manpower.find({
-      project: { $in: projectIds },
-    });
-
     const equipment = await Equipment.find({
       project: { $in: projectIds },
     });
@@ -240,28 +238,25 @@ exports.dashboardStats = async (req, res) => {
       (p) => p.status === "Completed",
     ).length;
 
-    const totalSkilledWorkers = manpower.reduce(
-      (sum, m) => sum + Number(m.skilledWorkers || 0),
-      0,
-    );
+    const workers = await Worker.find({
+      assignedProject: { $in: projectIds },
+    });
 
-    const totalHelpers = manpower.reduce(
-      (sum, m) => sum + Number(m.helpers || 0),
-      0,
-    );
+    const totalSkilledWorkers = workers.filter(
+      (w) => w.position === "Skilled",
+    ).length;
 
-    const totalEngineers = manpower.reduce(
-      (sum, m) => sum + Number(m.engineers || 0),
-      0,
-    );
+    const totalHelpers = workers.filter((w) => w.position === "Helper").length;
 
-    const totalOperators = manpower.reduce(
-      (sum, m) => sum + Number(m.operators || 0),
-      0,
-    );
+    const totalEngineers = workers.filter(
+      (w) => w.position === "Engineer",
+    ).length;
 
-    const totalManpower =
-      totalSkilledWorkers + totalHelpers + totalEngineers + totalOperators;
+    const totalOperators = workers.filter(
+      (w) => w.position === "Operator",
+    ).length;
+
+    const totalManpower = workers.length;
 
     const progressSummary = projects.map((p) => ({
       id: p._id,
@@ -313,15 +308,28 @@ exports.getMyProjects = async (req, res) => {
   try {
     let projects;
 
-    // staff only sees assigned projects
     if (req.user.role === "staff") {
+      const assignedTasks = await Task.find({
+        assignedTo: req.user._id,
+      }).select("project");
+
+      const taskProjectIds = assignedTasks.map((t) => t.project);
+
       projects = await Project.find({
-        assignedStaff: req.user._id,
+        $or: [
+          { assignedStaff: req.user._id },
+          { _id: { $in: taskProjectIds } },
+        ],
+      })
+        .populate("assignedStaff", "name email role")
+        .sort({ createdAt: -1 });
+    } else if (req.user.role === "client") {
+      projects = await Project.find({
+        clientUser: req.user._id,
       })
         .populate("assignedStaff", "name email role")
         .sort({ createdAt: -1 });
     } else {
-      // admin/inventory/client
       projects = await Project.find()
         .populate("assignedStaff", "name email role")
         .sort({ createdAt: -1 });

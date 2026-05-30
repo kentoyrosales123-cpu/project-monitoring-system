@@ -4,6 +4,7 @@
     <title>Register</title>
     <link rel="stylesheet" href="/css/style.css" />
   </head>
+
   <body>
     <div class="auth">
       <form class="auth-card" onsubmit="register(event)">
@@ -20,18 +21,74 @@
           required
         />
 
-        <select name="role" required>
+        <!-- ROLE -->
+        <select name="role" id="roleSelect" required>
           <option value="staff">Site Engineer / Staff</option>
+
           <option value="inventory">Inventory Officer</option>
+
           <option value="client">Client</option>
+
           <option value="admin">Admin / Project Manager</option>
+
+          <option value="worker">Worker</option>
+        </select>
+
+        <!-- WORKER POSITION -->
+        <select name="position" id="workerPosition" style="display: none">
+          <option value="">Select Position</option>
+
+          <option value="Foreman">Foreman</option>
+
+          <option value="Mason">Mason</option>
+
+          <option value="Carpenter">Carpenter</option>
+
+          <option value="Steelman">Steelman</option>
+
+          <option value="Electrician">Electrician</option>
+
+          <option value="Plumber">Plumber</option>
+
+          <option value="Helper">Helper</option>
+
+          <option value="Engineer">Engineer</option>
+
+          <option value="Operator">Operator</option>
         </select>
 
         <button class="btn">Register</button>
 
-        <p>Already registered? <a href="/login.html">Login</a></p>
+        <p>
+          Already registered?
+          <a href="/login.html"> Login </a>
+        </p>
       </form>
     </div>
+
+    <script>
+      const roleSelect = document.getElementById("roleSelect");
+
+      const workerPosition = document.getElementById("workerPosition");
+
+      function toggleWorkerPosition() {
+        if (roleSelect.value === "worker") {
+          workerPosition.style.display = "block";
+
+          workerPosition.required = true;
+        } else {
+          workerPosition.style.display = "none";
+
+          workerPosition.required = false;
+
+          workerPosition.value = "";
+        }
+      }
+
+      roleSelect.addEventListener("change", toggleWorkerPosition);
+
+      toggleWorkerPosition();
+    </script>
 
     <script src="/js/app.js"></script>
   </body>

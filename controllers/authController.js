@@ -1,37 +1,67 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const Worker = require("../models/Worker");
 
 const createToken = (id) =>
   jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
 exports.register = async (req, res) => {
-  const { name, email, password, role } = req.body;
-  if (!name || !email || !password)
-    return res
-      .status(400)
-      .json({ message: "Name, email, and password are required." });
+  try {
+    const { name, email, password, role, position, contactNumber } = req.body;
 
-  const exists = await User.findOne({ email });
-  if (exists)
-    return res.status(400).json({ message: "Email already registered." });
+    if (!name || !email || !password) {
+      return res.status(400).json({
+        message: "Name, email, and password are required.",
+      });
+    }
 
-  const allowedRoles = ["admin", "staff", "inventory", "client"];
+    const exists = await User.findOne({
+      email,
+    });
 
-  const user = await User.create({
-    name,
-    email,
-    password,
-    role: allowedRoles.includes(role) ? role : "staff",
-  });
-  res.status(201).json({
-    token: createToken(user._id),
-    user: {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    },
-  });
+    if (exists) {
+      return res.status(400).json({
+        message: "Email already registered.",
+      });
+    }
+
+    const allowedRoles = ["admin", "staff", "inventory", "client", "worker"];
+
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role: allowedRoles.includes(role) ? role : "staff",
+    });
+
+    // AUTO CREATE WORKER
+    if (user.role === "worker") {
+      await Worker.create({
+        user: user._id,
+        fullName: user.name,
+        position,
+        contactNumber: contactNumber || "",
+        ratePerDay: 0,
+        status: "Available",
+        assignedProject: null,
+        remarks: "Auto-created from registration",
+      });
+    }
+
+    res.status(201).json({
+      token: createToken(user._id),
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: error.message,
+    });
+  }
 };
 
 exports.login = async (req, res) => {

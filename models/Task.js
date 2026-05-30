@@ -42,7 +42,7 @@ const taskSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Pending", "Ongoing", "Done", "Delayed"],
+      enum: ["Pending", "Ongoing", "For Verification", "Done", "Delayed"],
       default: "Pending",
     },
 
@@ -62,6 +62,43 @@ const taskSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+    },
+    assignedWorkers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Worker",
+      },
+    ],
+    workerConfirmations: [
+      {
+        worker: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Worker",
+        },
+        status: {
+          type: String,
+          enum: ["Pending", "Submitted", "Verified"],
+          default: "Pending",
+        },
+        confirmedAt: {
+          type: Date,
+        },
+      },
+    ],
+
+    workerStatus: {
+      type: String,
+      enum: ["Pending", "In Progress", "For Verification", "Verified"],
+      default: "Pending",
+    },
+
+    workerConfirmedAt: {
+      type: Date,
+    },
+
+    productivityRecorded: {
+      type: Boolean,
+      default: false,
     },
   },
   { timestamps: true },

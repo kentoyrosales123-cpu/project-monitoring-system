@@ -1,6 +1,7 @@
 const ManpowerAttendance = require("../models/ManpowerAttendance");
 const Project = require("../models/Project");
 const Expense = require("../models/Expense");
+const Worker = require("../models/Worker");
 
 const getAllowedProjectIds = async (user) => {
   if (["admin", "inventory"].includes(user.role)) {
@@ -95,10 +96,13 @@ exports.createAttendance = async (req, res) => {
     const allowedProjectIds = await getAllowedProjectIds(req.user);
 
     if (!allowedProjectIds.includes(String(req.body.project))) {
-      return res.status(403).json({ message: "Unauthorized project access." });
+      return res.status(403).json({
+        message: "Unauthorized project access.",
+      });
     }
 
     const workers = Array.isArray(req.body.workers) ? req.body.workers : [];
+
     const computed = computeAttendance(workers);
 
     const attendance = await ManpowerAttendance.create({
@@ -110,6 +114,24 @@ exports.createAttendance = async (req, res) => {
       ...computed,
     });
 
+    // AUTO REFLECT TO WORKERS
+    for (const w of workers) {
+      if (!w.worker) continue;
+
+      await Worker.findByIdAndUpdate(w.worker, {
+        $push: {
+          attendanceHistory: {
+            date: req.body.date,
+            status: w.status,
+            overtimeHours: w.overtimeHours || 0,
+            remarks: w.remarks || "",
+            project: req.body.project,
+          },
+        },
+      });
+    }
+
+    // AUTO LABOR COST
     if (computed.totalLaborCost > 0) {
       await Expense.create({
         project: req.body.project,
@@ -124,7 +146,9 @@ exports.createAttendance = async (req, res) => {
 
     res.status(201).json(attendance);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      message: error.message,
+    });
   }
 };
 

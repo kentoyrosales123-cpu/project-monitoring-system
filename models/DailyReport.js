@@ -61,7 +61,18 @@ const dailyReportSchema = new mongoose.Schema(
       default: "",
     },
 
-    photos: [String],
+    photos: [
+      {
+        url: {
+          type: String,
+          required: true,
+        },
+        publicId: {
+          type: String,
+          required: true,
+        },
+      },
+    ],
 
     status: {
       type: String,

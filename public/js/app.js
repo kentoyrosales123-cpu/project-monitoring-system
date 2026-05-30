@@ -23,6 +23,31 @@ const dateTime = (d) => {
 };
 const qs = (s) => document.querySelector(s);
 const page = location.pathname.split("/").pop() || "index.html";
+let globalEscHandlerAttached = false;
+
+function attachGlobalEscHandler() {
+  if (globalEscHandlerAttached) return;
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+
+    const imageViewer = document.getElementById("imageViewer");
+    const appModal = document.getElementById("appModal");
+
+    if (imageViewer) {
+      closeImageSlider();
+      return;
+    }
+
+    if (appModal) {
+      closeModal();
+    }
+  });
+
+  globalEscHandlerAttached = true;
+}
+
+attachGlobalEscHandler();
 
 function requireAuth() {
   if (!token) location.href = "/login.html";
@@ -97,6 +122,20 @@ function layout(title) {
         ],
       },
     ];
+  } else if (user?.role === "worker") {
+    navGroups = [
+      {
+        title: "WORKER",
+        items: [
+          ["🏠", "My Dashboard", "/worker-dashboard.html"],
+          ["📅", "My Attendance", "/worker-attendance.html"],
+          ["📋", "My Tasks", "/worker-tasks.html"],
+          ["🏗️", "My Project", "/worker-project.html"],
+          ["🔔", "Notifications", "/worker-notifications.html"],
+          ["⚠️", "Report Issue", "/worker-issues.html"],
+        ],
+      },
+    ];
   } else {
     navGroups = [
       {
@@ -132,6 +171,7 @@ function layout(title) {
           ["📨", "Manpower Requests", "/manpower-requests.html"],
           ["📊", "Planned vs Actual", "/manpower-plans.html"],
           ["🧾", "Attendance", "/manpower-attendance.html"],
+          ["📈", "Productivity", "/productivity.html"],
         ],
       },
       {
@@ -279,6 +319,8 @@ async function login(e) {
       location.href = "/inventory-dashboard.html";
     } else if (data.user.role === "client") {
       location.href = "/client-dashboard.html";
+    } else if (data.user.role === "worker") {
+      location.href = "/worker-dashboard.html";
     } else {
       location.href = "/dashboard.html";
     }
@@ -299,7 +341,23 @@ async function register(e) {
 
     localStorage.setItem("token", data.token);
     localStorage.setItem("user", JSON.stringify(data.user));
-    location.href = "/dashboard.html";
+    if (data.user.role === "worker") {
+      location.href = "/worker-dashboard.html";
+    } else if (data.user.role === "inventory") {
+      location.href = "/inventory-dashboard.html";
+    } else if (data.user.role === "client") {
+      location.href = "/client-dashboard.html";
+    } else {
+      if (data.user.role === "worker") {
+        location.href = "/worker-dashboard.html";
+      } else if (data.user.role === "inventory") {
+        location.href = "/inventory-dashboard.html";
+      } else if (data.user.role === "client") {
+        location.href = "/client-dashboard.html";
+      } else {
+        location.href = "/dashboard.html";
+      }
+    }
   } catch (err) {
     alert(err.message);
   }
@@ -314,6 +372,8 @@ async function loadProjectsSelect() {
 }
 
 function modal(html) {
+  closeModal();
+
   document.body.insertAdjacentHTML(
     "beforeend",
     `
@@ -908,9 +968,10 @@ function projectForm(p = {}) {
           <option ${p.status === "Completed" ? "selected" : ""}>Completed</option>
         </select>
 
-        <select name="assignedStaff" multiple>
-          ${window.staffOptions || ""}
-        </select>
+        <label>Assigned Staff</label>
+<select name="assignedStaff" multiple>
+  ${window.staffOptions || ""}
+</select>
         <select name="clientUser">
   <option value="">No client linked</option>
   ${window.clientOptions || ""}
@@ -921,6 +982,21 @@ function projectForm(p = {}) {
       <button class="btn">Save</button>
     </form>
   `);
+  setTimeout(() => {
+    const form = document.querySelector("#appModal form");
+
+    if (form && Array.isArray(p.assignedStaff)) {
+      [...form.assignedStaff.options].forEach((option) => {
+        option.selected = p.assignedStaff.some((staff) => {
+          return String(staff._id || staff) === String(option.value);
+        });
+      });
+    }
+
+    if (form && p.clientUser?._id) {
+      form.clientUser.value = p.clientUser._id;
+    }
+  }, 50);
 }
 
 async function saveProject(e, id) {
@@ -981,6 +1057,97 @@ async function simplePage(title, path, fields, cols) {
       })),
       cols,
     );
+}
+
+async function workerDashboardPage() {
+  layout("Worker Dashboard");
+
+  const workers = await api("/api/workers").catch(() => []);
+  const myWorkerProfile = workers[0];
+
+  if (!myWorkerProfile || !myWorkerProfile.assignedProject) {
+    qs("#content").innerHTML = `
+      <section class="panel">
+        <h3>No Assigned Project Yet</h3>
+        <p class="empty-state">
+          You are not yet assigned to any project. Please wait for admin assignment.
+        </p>
+      </section>
+
+      <section class="kpi-grid">
+        <div class="kpi-card green">
+          <span class="kpi-icon">📅</span>
+          <small>My Attendance</small>
+          <h3>View</h3>
+          <p>Check your attendance records</p>
+        </div>
+
+        <div class="kpi-card blue">
+          <span class="kpi-icon">📋</span>
+          <small>My Tasks</small>
+          <h3>View</h3>
+          <p>Assigned task updates only</p>
+        </div>
+
+        <div class="kpi-card orange">
+          <span class="kpi-icon">🏗️</span>
+          <small>My Project</small>
+          <h3>Pending</h3>
+          <p>No project assigned yet</p>
+        </div>
+      </section>
+    `;
+    return;
+  }
+
+  const project = myWorkerProfile.assignedProject;
+
+  qs("#content").innerHTML = `
+    <section class="staff-hero">
+      <div>
+        <p class="eyebrow">My Assigned Project</p>
+        <h2>${project.name || "Project"}</h2>
+        <p>${project.location || "No location"}</p>
+
+        <div class="staff-project-meta">
+          <span>Status: <b>${project.status || "-"}</b></span>
+          <span>Progress: <b>${project.progress || 0}%</b></span>
+          <span>Target: <b>${date(project.targetCompletionDate)}</b></span>
+        </div>
+      </div>
+
+      <div class="staff-progress-card">
+        <span>${project.progress || 0}%</span>
+        <p>Project Progress</p>
+        <div class="progress large">
+          <span style="width:${percent(project.progress || 0)}%"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="kpi-grid">
+      <div class="kpi-card green">
+        <span class="kpi-icon">📅</span>
+        <small>My Attendance</small>
+        <h3>View</h3>
+        <p>Check your attendance records</p>
+      </div>
+
+      <div class="kpi-card blue">
+        <span class="kpi-icon">📋</span>
+        <small>My Tasks</small>
+        <h3>View</h3>
+        <p>Assigned task updates only</p>
+      </div>
+
+      <div class="kpi-card orange">
+        <span class="kpi-icon">🏗️</span>
+        <small>My Project</small>
+        <h3>${project.name || "Assigned"}</h3>
+        <p>${project.location || "No location"}</p>
+      </div>
+    </section>
+  `;
 }
 
 async function simpleForm(title, path, encoded) {
@@ -1676,7 +1843,7 @@ function viewReport(r) {
             ? currentReportPhotos
                 .map(
                   (p, i) => `
-                  <img src="${p}" onclick="openImageSlider(${i})">
+                  <img src="${p.url || p}" onclick="openImageSlider(${i})">
                 `,
                 )
                 .join("")
@@ -1761,6 +1928,8 @@ async function needsRevisionFromModal(id) {
 function openImageSlider(index) {
   currentSlideIndex = index;
 
+  document.getElementById("imageViewer")?.remove();
+
   document.body.insertAdjacentHTML(
     "beforeend",
     `
@@ -1769,7 +1938,10 @@ function openImageSlider(index) {
 
       <button class="image-nav left" onclick="prevImage()">‹</button>
 
-      <img id="sliderImage" src="${currentReportPhotos[currentSlideIndex]}">
+      <img id="sliderImage" src="${
+        currentReportPhotos[currentSlideIndex]?.url ||
+        currentReportPhotos[currentSlideIndex]
+      }">
 
       <button class="image-nav right" onclick="nextImage()">›</button>
 
@@ -1785,7 +1957,10 @@ function updateSliderImage() {
   const img = document.getElementById("sliderImage");
   const counter = document.querySelector(".image-counter");
 
-  if (img) img.src = currentReportPhotos[currentSlideIndex];
+  if (img) {
+    const photo = currentReportPhotos[currentSlideIndex];
+    img.src = photo?.url || photo;
+  }
 
   if (counter) {
     counter.textContent = `${currentSlideIndex + 1} / ${
@@ -1900,7 +2075,11 @@ async function saveReport(e, id = "") {
     });
 
     if (!res.ok) {
-      throw new Error("Failed to submit report");
+      const error = await res.json().catch(() => ({
+        message: "Failed to submit report",
+      }));
+
+      throw new Error(error.message);
     }
 
     alert("Daily report submitted successfully.");
@@ -2201,7 +2380,9 @@ async function staffDashboard() {
 }
 
 if (page === "dashboard.html") {
-  if (user?.role === "staff") {
+  if (user?.role === "worker") {
+    location.href = "/worker-dashboard.html";
+  } else if (user?.role === "staff") {
     staffDashboard();
   } else {
     dashboard();
@@ -2220,6 +2401,360 @@ if (page === "expense-analytics.html") expenseAnalyticsPage();
 if (page === "workers.html") workersPage();
 if (page === "manpower-requests.html") manpowerRequestsPage();
 if (page === "manpower-plans.html") manpowerPlansPage();
+if (page === "productivity.html") productivityPage();
+if (page === "worker-dashboard.html") workerDashboardPage();
+if (page === "worker-project.html") workerProjectPage();
+if (page === "worker-attendance.html") workerAttendancePage();
+if (page === "worker-tasks.html") workerTasksPage();
+
+async function workerTasksPage() {
+  layout("My Tasks");
+
+  const workers = await api("/api/workers").catch(() => []);
+
+  const myWorkerProfile = workers.find((w) => {
+    return String(w.user?._id || w.user || "") === String(user.id || user._id);
+  });
+
+  if (!myWorkerProfile) {
+    qs("#content").innerHTML = `
+      <section class="panel">
+        <h3>No Worker Profile Found</h3>
+        <p class="empty-state">Your account is not linked to a worker profile yet.</p>
+      </section>
+    `;
+    return;
+  }
+
+  const tasks = await api("/api/tasks");
+
+  const myTasks = tasks.filter((t) => {
+    return (t.assignedWorkers || []).some((w) => {
+      return String(w._id || w) === String(myWorkerProfile._id);
+    });
+  });
+
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <div id="workerTasksTable"></div>
+    </section>
+  `;
+
+  qs("#workerTasksTable").innerHTML = table(
+    myTasks.map((t) => {
+      const confirmations = t.workerConfirmations || [];
+
+      const myConfirmation = confirmations.find((c) => {
+        return (
+          String(c.worker?._id || c.worker) === String(myWorkerProfile._id)
+        );
+      });
+
+      const totalWorkers = confirmations.length;
+
+      const verifiedWorkers = confirmations.filter(
+        (c) => c.status === "Verified",
+      ).length;
+
+      const submittedWorkers = confirmations.filter(
+        (c) => c.status === "Submitted",
+      ).length;
+
+      const pendingWorkers = confirmations.filter(
+        (c) => c.status === "Pending",
+      ).length;
+
+      let taskDisplayStatus = t.status || "-";
+
+      if (totalWorkers > 0) {
+        if (verifiedWorkers === totalWorkers) {
+          taskDisplayStatus = "Completed";
+        } else if (submittedWorkers > 0 || verifiedWorkers > 0) {
+          taskDisplayStatus = "Ongoing Verification";
+        } else {
+          taskDisplayStatus = "Ongoing";
+        }
+      }
+
+      const workerProgress =
+        totalWorkers > 0
+          ? `
+            <b>${verifiedWorkers}/${totalWorkers} Verified</b>
+            <br>
+            <small>
+              ${submittedWorkers} Submitted • ${pendingWorkers} Pending
+            </small>
+          `
+          : "-";
+
+      return {
+        ...t,
+
+        myStatus: myConfirmation?.status || "Pending",
+        taskDisplayStatus,
+        workerProgress,
+
+        actions: ["Submitted", "Verified"].includes(myConfirmation?.status)
+          ? `<span class="status-badge ${statusClass(myConfirmation?.status)}">${myConfirmation?.status}</span>`
+          : `
+            <button class="btn success" onclick="confirmWorkerTaskDone('${t._id}', '${myWorkerProfile._id}')">
+              Confirm My Work Done
+            </button>
+          `,
+      };
+    }),
+    [
+      { label: "Project", render: (t) => t.project?.name || "-" },
+      { label: "Task", key: "title" },
+
+      {
+        label: "My Status",
+        render: (t) =>
+          `<span class="status-badge ${statusClass(t.myStatus)}">${t.myStatus}</span>`,
+      },
+
+      { label: "Start", render: (t) => date(t.startDate) },
+      { label: "Due", render: (t) => date(t.dueDate) },
+
+      {
+        label: "Task Status",
+        key: "taskDisplayStatus",
+      },
+
+      {
+        label: "Worker Progress",
+        key: "workerProgress",
+      },
+
+      { label: "Remarks", key: "remarks" },
+    ],
+  );
+}
+
+async function confirmWorkerTaskDone(taskId, workerId) {
+  if (!confirm("Confirm that your assigned work is done?")) return;
+
+  try {
+    const result = await api(`/api/tasks/${taskId}/confirm-done`, {
+      method: "PUT",
+      body: JSON.stringify({ workerId }),
+    });
+
+    console.log("Confirm result:", result);
+
+    alert("Your work was submitted for staff verification.");
+    workerTasksPage();
+  } catch (error) {
+    console.error("Confirm task error:", error);
+    alert(error.message);
+  }
+}
+
+async function workerProjectPage() {
+  layout("My Assigned Project");
+
+  const workers = await api("/api/workers").catch(() => []);
+
+  const myWorkerProfile = workers.find((w) => {
+    return String(w.user?._id || w.user || "") === String(user.id);
+  });
+
+  if (!myWorkerProfile || !myWorkerProfile.assignedProject) {
+    qs("#content").innerHTML = `
+      <section class="panel">
+        <h3>No Assigned Project Yet</h3>
+        <p class="empty-state">
+          You are not yet assigned to any project. Please wait for admin assignment.
+        </p>
+      </section>
+    `;
+    return;
+  }
+
+  const project = myWorkerProfile.assignedProject;
+
+  qs("#content").innerHTML = `
+    <section class="staff-hero">
+      <div>
+        <p class="eyebrow">My Assigned Project</p>
+        <h2>${project.name || "Project"}</h2>
+        <p>${project.location || "No location"}</p>
+
+        <div class="staff-project-meta">
+          <span>Status: <b>${project.status || "-"}</b></span>
+          <span>Progress: <b>${project.progress || 0}%</b></span>
+          <span>Target: <b>${date(project.targetCompletionDate)}</b></span>
+        </div>
+      </div>
+
+      <div class="staff-progress-card">
+        <span>${project.progress || 0}%</span>
+        <p>Project Progress</p>
+        <div class="progress large">
+          <span style="width:${percent(project.progress || 0)}%"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Project Details</p>
+          <h3>Safe Worker View</h3>
+        </div>
+      </div>
+
+      <div class="report-view-grid">
+        <div>
+          <b>Project Name</b>
+          <p>${project.name || "-"}</p>
+        </div>
+
+        <div>
+          <b>Location</b>
+          <p>${project.location || "-"}</p>
+        </div>
+
+        <div>
+          <b>Status</b>
+          <p>${project.status || "-"}</p>
+        </div>
+
+        <div>
+          <b>Target Completion</b>
+          <p>${date(project.targetCompletionDate)}</p>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+async function workerAttendancePage() {
+  layout("My Attendance");
+
+  const workers = await api("/api/workers").catch(() => []);
+
+  const myWorkerProfile = workers.find((w) => {
+    return String(w.user?._id || w.user || "") === String(user.id);
+  });
+
+  if (!myWorkerProfile) {
+    qs("#content").innerHTML = `
+      <section class="panel">
+        <h3>No Worker Profile Found</h3>
+        <p class="empty-state">
+          Your account is not yet linked to a worker profile.
+        </p>
+      </section>
+    `;
+    return;
+  }
+
+  const attendance = myWorkerProfile.attendanceHistory || [];
+
+  const present = attendance.filter((a) => a.status === "Present").length;
+  const absent = attendance.filter((a) => a.status === "Absent").length;
+  const late = attendance.filter((a) => a.status === "Late").length;
+  const halfDay = attendance.filter((a) => a.status === "Half Day").length;
+  const leave = attendance.filter((a) => a.status === "Leave").length;
+
+  qs("#content").innerHTML = `
+    <section class="staff-hero">
+      <div>
+        <p class="eyebrow">Worker Attendance Monitoring</p>
+        <h2>${myWorkerProfile.fullName}</h2>
+        <p>${myWorkerProfile.position} • ${myWorkerProfile.assignedProject?.name || "No assigned project"}</p>
+      </div>
+    </section>
+
+    <section class="kpi-grid">
+      <div class="kpi-card green">
+        <span class="kpi-icon">✅</span>
+        <small>Present</small>
+        <h3>${present}</h3>
+        <p>Total present records</p>
+      </div>
+
+      <div class="kpi-card red">
+        <span class="kpi-icon">❌</span>
+        <small>Absent</small>
+        <h3>${absent}</h3>
+        <p>Total absent records</p>
+      </div>
+
+      <div class="kpi-card orange">
+        <span class="kpi-icon">⏱️</span>
+        <small>Late</small>
+        <h3>${late}</h3>
+        <p>Total late records</p>
+      </div>
+
+      <div class="kpi-card blue">
+        <span class="kpi-icon">📅</span>
+        <small>Total Records</small>
+        <h3>${attendance.length}</h3>
+        <p>Attendance history</p>
+      </div>
+    </section>
+
+    <section class="dashboard-grid two">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Attendance Chart</p>
+            <h3>Status Summary</h3>
+          </div>
+        </div>
+
+        <canvas id="workerAttendanceChart"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Attendance Details</p>
+            <h3>My Attendance Records</h3>
+          </div>
+        </div>
+
+        <div id="workerAttendanceTable"></div>
+      </div>
+    </section>
+  `;
+
+  qs("#workerAttendanceTable").innerHTML = table(
+    attendance.map((a) => ({
+      ...a,
+      actions: "",
+    })),
+    [
+      { label: "Project", render: (a) => a.project?.name || "-" },
+      { label: "Date", render: (a) => date(a.date) },
+      { label: "Status", key: "status" },
+      { label: "OT Hours", render: (a) => a.overtimeHours || 0 },
+      { label: "Remarks", render: (a) => a.remarks || "-" },
+    ],
+  );
+
+  setTimeout(() => {
+    new Chart(document.getElementById("workerAttendanceChart"), {
+      type: "doughnut",
+      data: {
+        labels: ["Present", "Absent", "Late", "Half Day", "Leave"],
+        datasets: [
+          {
+            data: [present, absent, late, halfDay, leave],
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          legend: { position: "bottom" },
+        },
+      },
+    });
+  }, 100);
+}
 
 async function ganttPage() {
   layout("Project Gantt Chart");
@@ -2384,7 +2919,7 @@ async function ganttPage() {
                     class="gantt-modern-bar ${statusClass(status)}"
                     style="left:${left}%; width:${width}%"
                   >
-                    <span>${durationDays}d</span>
+                    <span>${durationDays} days</span>
                   </div>
                 </div>
               </div>
@@ -3461,10 +3996,14 @@ async function manpowerPage() {
   const selectedProject =
     localStorage.getItem("selectedManpowerProject") || projects?.[0]?._id || "";
 
-  const rows = await api(
-    selectedProject
-      ? `/api/manpower?project=${selectedProject}`
-      : "/api/manpower",
+  const query = selectedProject ? `?project=${selectedProject}` : "";
+
+  const workers = await api("/api/workers").catch(() => []);
+  const attendanceRows = await api(`/api/manpower-attendance${query}`).catch(
+    () => [],
+  );
+  const analytics = await api(
+    `/api/manpower-attendance/analytics/summary${query}`,
   );
 
   const projectOptions = projects
@@ -3477,96 +4016,59 @@ async function manpowerPage() {
     )
     .join("");
 
-  const totalSkilled = rows.reduce(
-    (sum, r) => sum + Number(r.skilledWorkers || 0),
-    0,
-  );
+  const totalWorkers = workers.filter((w) =>
+    selectedProject
+      ? String(w.assignedProject?._id || w.assignedProject) ===
+        String(selectedProject)
+      : true,
+  ).length;
 
-  const totalHelpers = rows.reduce((sum, r) => sum + Number(r.helpers || 0), 0);
-
-  const totalEngineers = rows.reduce(
-    (sum, r) => sum + Number(r.engineers || 0),
-    0,
-  );
-
-  const totalOperators = rows.reduce(
-    (sum, r) => sum + Number(r.operators || 0),
-    0,
-  );
-
-  const totalManpower =
-    totalSkilled + totalHelpers + totalEngineers + totalOperators;
+  const presentToday = Number(analytics.summary?.present || 0);
+  const absentToday = Number(analytics.summary?.absent || 0);
+  const attendanceRate =
+    totalWorkers > 0 ? Math.round((presentToday / totalWorkers) * 100) : 0;
 
   qs("#content").innerHTML = `
     <section class="panel">
       <div class="form-grid">
         <div>
           <label>Select Project</label>
-          <select
-  id="manpowerProjectSelect"
-  onchange="changeManpowerProject(this.value)"
->
+          <select id="manpowerProjectSelect" onchange="changeManpowerProject(this.value)">
             ${projectOptions}
           </select>
         </div>
-
-        <div>
-          <label>Search</label>
-          <input
-            id="manpowerSearch"
-            placeholder="Search manpower remarks or project..."
-            oninput="filterManpower()"
-          >
-        </div>
       </div>
-
-      <br>
-
-      <button class="btn" onclick="manpowerForm()">
-        Add Manpower Record
-      </button>
-
-      <button class="btn secondary" onclick="downloadManpowerExcel()">
-        Export Excel
-      </button>
     </section>
 
     <br>
 
     <section class="kpi-grid">
       <div class="kpi-card blue">
-        <span class="kpi-icon">👷</span>
-        <small>Total Workers</small>
-        <h3>${totalManpower}</h3>
-        <p>Recorded manpower</p>
+        <span class="kpi-icon">👥</span>
+        <small>Total Registered Workers</small>
+        <h3>${totalWorkers}</h3>
+        <p>From worker master list</p>
       </div>
 
       <div class="kpi-card green">
-        <span class="kpi-icon">🧰</span>
-        <small>Skilled Workers</small>
-        <h3>${totalSkilled}</h3>
-        <p>Site skilled labor</p>
-      </div>
-
-      <div class="kpi-card orange">
-        <span class="kpi-icon">🤝</span>
-        <small>Helpers</small>
-        <h3>${totalHelpers}</h3>
-        <p>Support workers</p>
-      </div>
-
-      <div class="kpi-card emerald">
-        <span class="kpi-icon">👷‍♂️</span>
-        <small>Engineers</small>
-        <h3>${totalEngineers}</h3>
-        <p>Technical supervision</p>
+        <span class="kpi-icon">👷</span>
+        <small>Present</small>
+        <h3>${presentToday}</h3>
+        <p>Based on attendance</p>
       </div>
 
       <div class="kpi-card red">
-        <span class="kpi-icon">🏗️</span>
-        <small>Operators</small>
-        <h3>${totalOperators}</h3>
-        <p>Equipment operators</p>
+        <span class="kpi-icon">❌</span>
+        <small>Absent</small>
+        <h3>${absentToday}</h3>
+        <p>Based on attendance</p>
+      </div>
+
+      <div class="kpi-card orange">
+        <span class="kpi-icon">📊</span>
+        <small>Attendance Rate</small>
+        <h3>${attendanceRate}%</h3>
+        <p>Present / registered workers</p>
       </div>
     </section>
 
@@ -3574,11 +4076,10 @@ async function manpowerPage() {
       <div class="panel">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">Manpower Analytics</p>
-            <h3>Workforce Distribution</h3>
+            <p class="eyebrow">Attendance Analytics</p>
+            <h3>Present vs Absent</h3>
           </div>
         </div>
-
         <canvas id="manpowerDistributionChart"></canvas>
       </div>
 
@@ -3586,10 +4087,9 @@ async function manpowerPage() {
         <div class="panel-header">
           <div>
             <p class="eyebrow">Daily Trend</p>
-            <h3>Workers Per Record</h3>
+            <h3>Attendance-Based Manpower</h3>
           </div>
         </div>
-
         <canvas id="manpowerTrendChart"></canvas>
       </div>
     </section>
@@ -3598,7 +4098,7 @@ async function manpowerPage() {
       <div class="panel-header">
         <div>
           <p class="eyebrow">Records</p>
-          <h3>Daily Manpower Logs</h3>
+          <h3>Attendance Logs</h3>
         </div>
       </div>
 
@@ -3606,14 +4106,62 @@ async function manpowerPage() {
     </section>
   `;
 
-  window.manpowerRows = rows;
+  window.manpowerRows = attendanceRows;
 
-  renderManpowerTable(rows);
-  renderManpowerCharts(rows, {
-    totalSkilled,
-    totalHelpers,
-    totalEngineers,
-    totalOperators,
+  renderManpowerTable(attendanceRows);
+  renderAttendanceBasedManpowerCharts(analytics.trend || []);
+}
+
+function renderAttendanceBasedManpowerCharts(trend = []) {
+  new Chart(document.getElementById("manpowerDistributionChart"), {
+    type: "doughnut",
+    data: {
+      labels: ["Present", "Absent"],
+      datasets: [
+        {
+          data: [
+            trend.reduce((sum, x) => sum + Number(x.present || 0), 0),
+            trend.reduce((sum, x) => sum + Number(x.absent || 0), 0),
+          ],
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position: "bottom" },
+      },
+    },
+  });
+
+  new Chart(document.getElementById("manpowerTrendChart"), {
+    type: "line",
+    data: {
+      labels: trend.map((x) => date(x.date)),
+      datasets: [
+        {
+          label: "Present",
+          data: trend.map((x) => x.present || 0),
+          fill: true,
+          tension: 0.4,
+        },
+        {
+          label: "Absent",
+          data: trend.map((x) => x.absent || 0),
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+      },
+    },
   });
 }
 
@@ -3653,14 +4201,17 @@ async function manpowerPlansPage() {
     (sum, r) => sum + Number(r.planned?.total || 0),
     0,
   );
+
   const totalActual = comparison.reduce(
     (sum, r) => sum + Number(r.actual?.total || 0),
     0,
   );
+
   const totalShortage = comparison.reduce(
     (sum, r) => sum + Number(r.shortage || 0),
     0,
   );
+
   const shortageDays = comparison.filter((r) => r.status === "Shortage").length;
 
   window.manpowerPlansData = plans;
@@ -3671,7 +4222,10 @@ async function manpowerPlansPage() {
       <div class="form-grid">
         <div>
           <label>Select Project</label>
-          <select onchange="changeManpowerPlanProject(this.value)">
+          <select
+  id="manpowerPlanProjectSelect"
+  onchange="changeManpowerPlanProject(this.value)"
+>
             ${projectOptions}
           </select>
         </div>
@@ -3689,9 +4243,10 @@ async function manpowerPlansPage() {
       <br>
 
       <button class="btn" onclick="manpowerPlanForm()">Add Manpower Plan</button>
+
       <button class="btn secondary" onclick="downloadManpowerPlanExcel()">
-  Export Excel
-</button>
+        Export Excel
+      </button>
     </section>
 
     <br>
@@ -3734,40 +4289,43 @@ async function manpowerPlansPage() {
             <h3>Planned vs Actual Workers</h3>
           </div>
         </div>
+
         <canvas id="plannedActualChart"></canvas>
       </div>
 
-      <div class="panel danger-panel">
+      <div class="panel">
         <div class="panel-header">
           <div>
-            <p class="eyebrow">Alerts</p>
-            <h3>Manpower Shortage Alerts</h3>
+            <p class="eyebrow">Summary</p>
+            <h3>Manpower Variance Status</h3>
           </div>
         </div>
 
-        ${
-          comparison.filter((r) => r.status === "Shortage").length
-            ? comparison
-                .filter((r) => r.status === "Shortage")
-                .slice(0, 6)
-                .map(
-                  (r) => `
-                    <div class="alert-item">
-                      <b>${r.project?.name || "-"}</b>
-                      <p>
-  ${r.activity} shortage:
-  Skilled ${r.shortages?.skilledWorkers || 0},
-  Helpers ${r.shortages?.helpers || 0},
-  Engineers ${r.shortages?.engineers || 0},
-  Operators ${r.shortages?.operators || 0}
-</p>
-                      <small>${date(r.date)} • Planned ${r.planned.total}, Actual ${r.actual.total}</small>
-                    </div>
-                  `,
-                )
-                .join("")
-            : `<div class="empty-state">No manpower shortage detected.</div>`
-        }
+        <div class="resource-grid">
+          <div>
+            <span>📋</span>
+            <b>${comparison.length}</b>
+            <small>Total Plan Records</small>
+          </div>
+
+          <div>
+            <span>⚠️</span>
+            <b>${shortageDays}</b>
+            <small>Shortage Records</small>
+          </div>
+
+          <div>
+            <span>✅</span>
+            <b>${comparison.filter((r) => r.status === "Balanced").length}</b>
+            <small>Balanced Records</small>
+          </div>
+
+          <div>
+            <span>👥</span>
+            <b>${comparison.filter((r) => r.status === "Overstaffed").length}</b>
+            <small>Overstaffed Records</small>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -3794,7 +4352,9 @@ function changeManpowerPlanProject(projectId) {
 
 function manpowerPlanForm() {
   const selectedProject =
-    localStorage.getItem("selectedManpowerPlanProject") || "";
+    document.getElementById("manpowerPlanProjectSelect")?.value ||
+    localStorage.getItem("selectedManpowerPlanProject") ||
+    "";
 
   if (!selectedProject) {
     alert("Please select a project first.");
@@ -3814,10 +4374,15 @@ function manpowerPlanForm() {
       <input name="activity" placeholder="Example: Concrete pouring / masonry works" required>
 
       <div class="form-grid">
-        <input name="skilledWorkers" type="number" min="0" placeholder="Planned Skilled">
-        <input name="helpers" type="number" min="0" placeholder="Planned Helpers">
-        <input name="engineers" type="number" min="0" placeholder="Planned Engineers">
-        <input name="operators" type="number" min="0" placeholder="Planned Operators">
+        <input name="foreman" type="number" min="0" placeholder="Planned Foreman">
+        <input name="mason" type="number" min="0" placeholder="Planned Mason">
+        <input name="carpenter" type="number" min="0" placeholder="Planned Carpenter">
+        <input name="steelman" type="number" min="0" placeholder="Planned Steelman">
+        <input name="electrician" type="number" min="0" placeholder="Planned Electrician">
+        <input name="plumber" type="number" min="0" placeholder="Planned Plumber">
+        <input name="helpers" type="number" min="0" placeholder="Planned Helper">
+        <input name="engineers" type="number" min="0" placeholder="Planned Engineer">
+        <input name="operators" type="number" min="0" placeholder="Planned Operator">
       </div>
 
       <label>Remarks</label>
@@ -3847,50 +4412,34 @@ function renderManpowerComparisonTable(rows) {
     rows.map((r) => ({
       ...r,
       actions: `
-  ${
-    r.status === "Shortage"
-      ? `<button class="btn warning" onclick='createRequestFromShortage(${JSON.stringify(r)})'>
-          Request Shortage
-        </button>`
-      : ""
-  }
+        ${
+          r.status === "Shortage"
+            ? `<button class="btn warning" onclick='createRequestFromShortage(${JSON.stringify(r)})'>
+                Request Shortage
+              </button>`
+            : ""
+        }
 
-  ${
-    user.role === "admin"
-      ? `<button class="btn danger" onclick="del('/api/manpower-plans','${r._id}')">Delete</button>`
-      : ""
-  }
-`,
+        ${
+          user.role === "admin"
+            ? `<button class="btn danger" onclick="del('/api/manpower-plans','${r._id}')">Delete</button>`
+            : ""
+        }
+      `,
     })),
     [
-      [
-        { label: "Project", render: (r) => r.project?.name || "-" },
-        { label: "Date", render: (r) => date(r.date) },
-        { label: "Activity", key: "activity" },
-        { label: "Planned", render: (r) => r.planned?.total || 0 },
-        { label: "Actual", render: (r) => r.actual?.total || 0 },
-        {
-          label: "Position Shortage",
-          render: (r) => `
-      Skilled: ${r.shortages?.skilledWorkers || 0}<br>
-      Helpers: ${r.shortages?.helpers || 0}<br>
-      Engineers: ${r.shortages?.engineers || 0}<br>
-      Operators: ${r.shortages?.operators || 0}
-    `,
-        },
-        { label: "Total Shortage", render: (r) => r.shortage || 0 },
-        {
-          label: "Risk",
-          render: (r) =>
-            `<span class="status-badge ${statusClass(r.delayRisk)}">${r.delayRisk}</span>`,
-        },
-        {
-          label: "Status",
-          render: (r) =>
-            `<span class="status-badge ${statusClass(r.status)}">${r.status}</span>`,
-        },
-        { label: "Remarks", render: (r) => r.remarks || "-" },
-      ],
+      { label: "Project", render: (r) => r.project?.name || "-" },
+      { label: "Date", render: (r) => date(r.date) },
+      { label: "Activity", key: "activity" },
+      { label: "Planned", render: (r) => r.planned?.total || 0 },
+      { label: "Actual", render: (r) => r.actual?.total || 0 },
+      { label: "Total Shortage", render: (r) => r.shortage || 0 },
+      {
+        label: "Status",
+        render: (r) =>
+          `<span class="status-badge ${statusClass(r.status)}">${r.status}</span>`,
+      },
+      { label: "Remarks", render: (r) => r.remarks || "-" },
     ],
   );
 }
@@ -4085,10 +4634,37 @@ async function manpowerAttendancePage() {
 
   const projects = await api("/api/projects/my-projects");
 
+  const workers = await api("/api/workers").catch(() => []);
+
   const selectedProject =
     localStorage.getItem("selectedAttendanceProject") ||
     projects?.[0]?._id ||
     "";
+
+  const projectWorkers = workers.filter((w) => {
+    const assignedProject = String(
+      w.assignedProject?._id || w.assignedProject || "",
+    );
+    return selectedProject ? assignedProject === String(selectedProject) : true;
+  });
+
+  window.attendanceWorkers = projectWorkers;
+
+  window.attendanceWorkerOptions = projectWorkers
+    .filter((w) => ["Assigned", "Available"].includes(w.status))
+    .map(
+      (w) => `
+      <option
+        value="${w._id}"
+        data-name="${w.fullName}"
+        data-position="${w.position}"
+        data-rate="${w.ratePerDay || 0}"
+      >
+        ${w.fullName} - ${w.position}
+      </option>
+    `,
+    )
+    .join("");
 
   const rows = await api(
     selectedProject
@@ -4285,6 +4861,60 @@ function attendanceForm() {
     return;
   }
 
+  const workers = window.attendanceWorkers || [];
+
+  if (!workers.length) {
+    alert("No workers assigned to this project.");
+    return;
+  }
+
+  const workerRows = workers
+    .filter((w) => ["Assigned", "Available"].includes(w.status))
+    .map(
+      (w) => `
+        <tr class="attendance-bulk-row">
+          <td>
+            <input type="checkbox" class="att-include" checked>
+          </td>
+
+          <td>
+            <b>${w.fullName}</b>
+            <input type="hidden" class="att-worker" value="${w._id}">
+            <input type="hidden" class="att-worker-name" value="${w.fullName}">
+          </td>
+
+          <td>
+            ${w.position}
+            <input type="hidden" class="att-position" value="${w.position}">
+          </td>
+
+          <td>
+            <select class="att-status">
+              <option>Present</option>
+              <option>Absent</option>
+              <option>Late</option>
+              <option>Half Day</option>
+              <option>Leave</option>
+            </select>
+          </td>
+
+          <td>
+            ₱${Number(w.ratePerDay || 0).toLocaleString()}
+            <input type="hidden" class="att-rate" value="${w.ratePerDay || 0}">
+          </td>
+
+          <td>
+            <input class="att-ot" type="number" min="0" step="0.5" value="0">
+          </td>
+
+          <td>
+            <input class="att-remarks" placeholder="Remarks">
+          </td>
+        </tr>
+      `,
+    )
+    .join("");
+
   modal(`
     <h3>Add Manpower Attendance</h3>
 
@@ -4294,16 +4924,48 @@ function attendanceForm() {
       <label>Date</label>
       <input name="date" type="date" value="${date(new Date())}" required>
 
-      <div class="section-header">
-        <h4>Workers</h4>
-        <button type="button" class="btn secondary" onclick="addAttendanceWorkerRow()">+ Add Worker</button>
+      <div class="attendance-actions">
+        <button type="button" class="btn success" onclick="setAllAttendanceStatus('Present')">
+          Mark All Present
+        </button>
+
+        <button type="button" class="btn danger" onclick="setAllAttendanceStatus('Absent')">
+          Mark All Absent
+        </button>
+
+        <button type="button" class="btn warning" onclick="setAllAttendanceStatus('Late')">
+          Mark All Late
+        </button>
+
+        <button type="button" class="btn secondary" onclick="toggleAllAttendanceWorkers(false)">
+          Uncheck All
+        </button>
+
+        <button type="button" class="btn secondary" onclick="toggleAllAttendanceWorkers(true)">
+          Check All
+        </button>
       </div>
 
-      <div id="attendanceWorkerList">
-        ${attendanceWorkerRow()}
+      <div class="attendance-table-wrap">
+        <table class="attendance-bulk-table">
+          <thead>
+            <tr>
+              <th>Use</th>
+              <th>Worker</th>
+              <th>Position</th>
+              <th>Status</th>
+              <th>Rate/Day</th>
+              <th>OT Hrs</th>
+              <th>Remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${workerRows}
+          </tbody>
+        </table>
       </div>
 
-      <label>Remarks</label>
+      <label>General Remarks</label>
       <textarea name="remarks" placeholder="Example: 2 workers absent due to rain"></textarea>
 
       <br><br>
@@ -4312,37 +4974,16 @@ function attendanceForm() {
   `);
 }
 
-function attendanceWorkerRow() {
-  return `
-    <div class="dynamic-row attendance-worker-row">
-      <input class="workerName" placeholder="Worker name" required>
-
-      <select class="position">
-        <option>Skilled</option>
-        <option>Helper</option>
-        <option>Engineer</option>
-        <option>Operator</option>
-      </select>
-
-      <select class="status">
-        <option>Present</option>
-        <option>Absent</option>
-        <option>Late</option>
-        <option>Half Day</option>
-        <option>Leave</option>
-      </select>
-
-      <input class="ratePerDay" type="number" min="0" placeholder="Rate/day">
-      <input class="overtimeHours" type="number" min="0" placeholder="OT hrs">
-      <input class="remarks" placeholder="Remarks">
-    </div>
-  `;
+function setAllAttendanceStatus(status) {
+  document.querySelectorAll(".att-status").forEach((select) => {
+    select.value = status;
+  });
 }
 
-function addAttendanceWorkerRow() {
-  document
-    .getElementById("attendanceWorkerList")
-    .insertAdjacentHTML("beforeend", attendanceWorkerRow());
+function toggleAllAttendanceWorkers(checked) {
+  document.querySelectorAll(".att-include").forEach((box) => {
+    box.checked = checked;
+  });
 }
 
 async function saveAttendance(e) {
@@ -4351,19 +4992,21 @@ async function saveAttendance(e) {
   const form = e.target;
   const data = Object.fromEntries(new FormData(form));
 
-  const workers = [...document.querySelectorAll(".attendance-worker-row")]
+  const workers = [...document.querySelectorAll(".attendance-bulk-row")]
+    .filter((row) => row.querySelector(".att-include")?.checked)
     .map((row) => ({
-      workerName: row.querySelector(".workerName")?.value,
-      position: row.querySelector(".position")?.value,
-      status: row.querySelector(".status")?.value,
-      ratePerDay: Number(row.querySelector(".ratePerDay")?.value || 0),
-      overtimeHours: Number(row.querySelector(".overtimeHours")?.value || 0),
-      remarks: row.querySelector(".remarks")?.value || "",
+      worker: row.querySelector(".att-worker")?.value,
+      workerName: row.querySelector(".att-worker-name")?.value,
+      position: row.querySelector(".att-position")?.value,
+      status: row.querySelector(".att-status")?.value,
+      ratePerDay: Number(row.querySelector(".att-rate")?.value || 0),
+      overtimeHours: Number(row.querySelector(".att-ot")?.value || 0),
+      remarks: row.querySelector(".att-remarks")?.value || "",
     }))
-    .filter((w) => w.workerName);
+    .filter((w) => w.worker && w.workerName);
 
   if (!workers.length) {
-    alert("Please add at least one worker.");
+    alert("Please select at least one worker.");
     return;
   }
 
@@ -4434,27 +5077,69 @@ function changeManpowerProject(projectId) {
 }
 
 function renderManpowerTable(rows) {
+  const activeStatuses = ["Present", "Late", "Half Day"];
+
   qs("#manpowerTable").innerHTML = table(
-    rows.map((r) => ({
-      ...r,
-      total:
-        Number(r.skilledWorkers || 0) +
-        Number(r.helpers || 0) +
-        Number(r.engineers || 0) +
-        Number(r.operators || 0),
-      actions:
-        user.role === "admin"
-          ? `<button class="btn danger" onclick="del('/api/manpower','${r._id}')">Delete</button>`
-          : "",
-    })),
+    rows.map((r) => {
+      const workers = r.workers || [];
+
+      const countPosition = (position) =>
+        workers.filter(
+          (w) => w.position === position && activeStatuses.includes(w.status),
+        ).length;
+
+      const foreman = countPosition("Foreman");
+      const mason = countPosition("Mason");
+      const carpenter = countPosition("Carpenter");
+      const steelman = countPosition("Steelman");
+      const electrician = countPosition("Electrician");
+      const plumber = countPosition("Plumber");
+      const helpers = countPosition("Helper");
+      const engineers = countPosition("Engineer");
+      const operators = countPosition("Operator");
+
+      return {
+        ...r,
+        foreman,
+        mason,
+        carpenter,
+        steelman,
+        electrician,
+        plumber,
+        helpers,
+        engineers,
+        operators,
+        total:
+          foreman +
+          mason +
+          carpenter +
+          steelman +
+          electrician +
+          plumber +
+          helpers +
+          engineers +
+          operators,
+        actions:
+          user.role === "admin"
+            ? `<button class="btn danger" onclick="del('/api/manpower-attendance','${r._id}')">Delete</button>`
+            : "",
+      };
+    }),
     [
       { label: "Project", render: (r) => r.project?.name || "-" },
       { label: "Date", render: (r) => date(r.date) },
-      { label: "Skilled", render: (r) => r.skilledWorkers || 0 },
-      { label: "Helpers", render: (r) => r.helpers || 0 },
-      { label: "Engineers", render: (r) => r.engineers || 0 },
-      { label: "Operators", render: (r) => r.operators || 0 },
-      { label: "Total", key: "total" },
+      { label: "Foreman", key: "foreman" },
+      { label: "Mason", key: "mason" },
+      { label: "Carpenter", key: "carpenter" },
+      { label: "Steelman", key: "steelman" },
+      { label: "Electrician", key: "electrician" },
+      { label: "Plumber", key: "plumber" },
+      { label: "Helper", key: "helpers" },
+      { label: "Engineer", key: "engineers" },
+      { label: "Operator", key: "operators" },
+      { label: "Total Present", key: "total" },
+      { label: "Absent", render: (r) => r.totalAbsent || 0 },
+      { label: "Late", render: (r) => r.totalLate || 0 },
       { label: "Remarks", render: (r) => r.remarks || "-" },
       { label: "Encoded By", render: (r) => r.encodedBy?.name || "-" },
     ],
@@ -5509,7 +6194,7 @@ async function clientDashboard() {
             ? projectReports
                 .flatMap((r) => r.photos || [])
                 .slice(0, 12)
-                .map((p) => `<img src="${p}">`)
+                .map((p) => `<img src="${p.url || p}">`)
                 .join("")
             : `<p class="empty-state">No site photos uploaded yet.</p>`
         }
@@ -5556,6 +6241,7 @@ async function tasksPage() {
 
   const projects = await api("/api/projects/my-projects");
   const users = await api("/api/auth/users").catch(() => []);
+  const workers = await api("/api/workers").catch(() => []);
 
   const selectedProject =
     localStorage.getItem("selectedTaskProject") || projects?.[0]?._id || "";
@@ -5576,6 +6262,17 @@ async function tasksPage() {
         ${p.name}
       </option>
     `,
+    )
+    .join("");
+
+  window.taskWorkerOptions = workers
+    .filter(
+      (w) =>
+        String(w.assignedProject?._id || w.assignedProject) ===
+        String(selectedProject),
+    )
+    .map(
+      (w) => `<option value="${w._id}">${w.fullName} - ${w.position}</option>`,
     )
     .join("");
 
@@ -5634,37 +6331,80 @@ function changeTaskProject(projectId) {
 
 function renderTasksTable(rows) {
   qs("#tasksTable").innerHTML = table(
-    rows.map((t) => ({
-      ...t,
-      actions: `
-        ${
-          user.role === "admin"
-            ? `
-              <button class="btn" onclick='taskForm(${JSON.stringify(t)})'>
-                Edit
-              </button>
-              <button class="btn danger" onclick="del('/api/tasks','${t._id}')">
-                Delete
-              </button>
-            `
-            : ""
-        }
+    rows.map((t) => {
+      const confirmations = t.workerConfirmations || [];
+      const totalWorkers = confirmations.length;
+      const submittedWorkers = confirmations.filter(
+        (c) => c.status === "Submitted",
+      ).length;
 
-        ${
-          user.role === "staff"
-            ? `
-              <button class="btn success" onclick='taskStatusForm(${JSON.stringify(t)})'>
-                Update Status
-              </button>
-            `
-            : ""
-        }
-      `,
-    })),
+      const verifiedWorkers = confirmations.filter(
+        (c) => c.status === "Verified",
+      ).length;
+
+      const computedWorkerStatus =
+        totalWorkers > 0
+          ? verifiedWorkers === totalWorkers
+            ? "Verified"
+            : submittedWorkers > 0
+              ? `${submittedWorkers}/${totalWorkers} Submitted`
+              : `${verifiedWorkers}/${totalWorkers} Verified`
+          : t.workerStatus || "-";
+
+      return {
+        ...t,
+        actions: `
+          ${
+            user.role === "admin"
+              ? `
+                <button class="btn" onclick='taskForm(${JSON.stringify(t)})'>
+                  Edit
+                </button>
+                <button class="btn danger" onclick="del('/api/tasks','${t._id}')">
+                  Delete
+                </button>
+              `
+              : ""
+          }
+
+          ${
+            user.role === "staff"
+              ? `
+                <button class="btn" onclick='assignWorkerForm(${JSON.stringify(t)})'>
+                  Assign Worker
+                </button>
+
+                <button class="btn success" onclick='taskStatusForm(${JSON.stringify(t)})'>
+                  Update Status
+                </button>
+                <button class="btn warning" onclick='verifyWorkerForm(${JSON.stringify(t)})'>
+  Verify Worker Work
+</button>
+              `
+              : ""
+          }
+        `,
+        computedWorkerStatus,
+      };
+    }),
     [
       { label: "Project", render: (t) => t.project?.name || "" },
       { label: "Task", key: "title" },
       { label: "Assigned To", render: (t) => t.assignedTo?.name || "-" },
+
+      {
+        label: "Workers",
+        render: (t) =>
+          t.assignedWorkers?.length
+            ? t.assignedWorkers.map((w) => w.fullName || w).join(", ")
+            : "-",
+      },
+
+      {
+        label: "Worker Status",
+        render: (t) => t.computedWorkerStatus || t.workerStatus || "-",
+      },
+
       { label: "Start", render: (t) => date(t.startDate) },
       { label: "Due", render: (t) => date(t.dueDate) },
       { label: "Priority", key: "priority" },
@@ -5780,18 +6520,129 @@ function taskStatusForm(t = {}) {
   `);
 }
 
-async function saveTask(e, id = "") {
+function assignWorkerForm(t = {}) {
+  modal(`
+    <h3>Assign Task to Workers</h3>
+
+    <form onsubmit="saveAssignedWorker(event, '${t._id}')">
+      <label>Task</label>
+      <input value="${t.title || ""}" readonly>
+
+      <label>Workers</label>
+      <select name="assignedWorkers" multiple required size="6">
+        ${window.taskWorkerOptions || ""}
+      </select>
+
+      <small>Hold CTRL to select multiple workers.</small>
+
+      <br><br>
+
+      <button class="btn success">Assign Workers</button>
+    </form>
+  `);
+}
+
+function verifyWorkerForm(t = {}) {
+  const submittedWorkers = (t.workerConfirmations || [])
+    .filter((c) => c.status === "Submitted")
+    .map((c) => {
+      const worker = (t.assignedWorkers || []).find((w) => {
+        return String(w._id || w) === String(c.worker?._id || c.worker);
+      });
+
+      return `
+        <option value="${c.worker?._id || c.worker}">
+          ${worker?.fullName || "Worker"} - Submitted
+        </option>
+      `;
+    })
+    .join("");
+
+  if (!submittedWorkers) {
+    alert("No submitted worker work for verification.");
+    return;
+  }
+
+  modal(`
+    <h3>Verify Worker Work</h3>
+
+    <form onsubmit="saveWorkerVerification(event, '${t._id}')">
+      <label>Task</label>
+      <input value="${t.title || ""}" readonly>
+
+      <label>Submitted Worker</label>
+      <select name="workerId" required>
+        ${submittedWorkers}
+      </select>
+
+      <div class="form-grid">
+        <input name="plannedOutput" type="number" min="0" step="0.01" placeholder="Planned Output" required>
+        <input name="actualOutput" type="number" min="0" step="0.01" placeholder="Actual Output" required>
+        <input name="unit" placeholder="Unit e.g. sqm, m3, task" value="task" required>
+      </div>
+
+      <label>Verification Remarks</label>
+      <textarea name="remarks" placeholder="Example: Checked and completed properly."></textarea>
+
+      <button class="btn success">Confirm & Record Productivity</button>
+    </form>
+  `);
+}
+
+async function saveWorkerVerification(e, taskId) {
   e.preventDefault();
 
   const data = Object.fromEntries(new FormData(e.target));
 
-  await api("/api/tasks" + (id ? `/${id}` : ""), {
-    method: id ? "PUT" : "POST",
+  await api(`/api/tasks/${taskId}/verify-worker`, {
+    method: "PUT",
     body: JSON.stringify(data),
   });
 
-  alert("Task saved successfully.");
+  alert(
+    "Work verified. Productivity will be recorded once all workers are verified.",
+  );
   location.reload();
+}
+
+async function saveAssignedWorker(e, taskId) {
+  e.preventDefault();
+
+  const fd = new FormData(e.target);
+
+  const data = {
+    assignedWorkers: fd.getAll("assignedWorkers"),
+  };
+
+  await api(`/api/tasks/${taskId}/assign-worker`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+
+  alert("Task assigned to workers.");
+  location.reload();
+}
+
+async function saveTask(e, id = "") {
+  e.preventDefault();
+
+  try {
+    const data = Object.fromEntries(new FormData(e.target));
+
+    if (!data.assignedTo) {
+      data.assignedTo = null;
+    }
+
+    await api("/api/tasks" + (id ? `/${id}` : ""), {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify(data),
+    });
+
+    alert("Task saved successfully.");
+    location.reload();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function filterTasks() {
@@ -6743,11 +7594,16 @@ function workerForm(w = {}) {
         <input name="fullName" placeholder="Full name" value="${w.fullName || ""}" required>
 
         <select name="position" required>
-          <option ${w.position === "Skilled" ? "selected" : ""}>Skilled</option>
-          <option ${w.position === "Helper" ? "selected" : ""}>Helper</option>
-          <option ${w.position === "Engineer" ? "selected" : ""}>Engineer</option>
-          <option ${w.position === "Operator" ? "selected" : ""}>Operator</option>
-        </select>
+  <option ${w.position === "Foreman" ? "selected" : ""}>Foreman</option>
+  <option ${w.position === "Mason" ? "selected" : ""}>Mason</option>
+  <option ${w.position === "Carpenter" ? "selected" : ""}>Carpenter</option>
+  <option ${w.position === "Steelman" ? "selected" : ""}>Steelman</option>
+  <option ${w.position === "Electrician" ? "selected" : ""}>Electrician</option>
+  <option ${w.position === "Plumber" ? "selected" : ""}>Plumber</option>
+  <option ${w.position === "Helper" ? "selected" : ""}>Helper</option>
+  <option ${w.position === "Engineer" ? "selected" : ""}>Engineer</option>
+  <option ${w.position === "Operator" ? "selected" : ""}>Operator</option>
+</select>
 
         <input name="contactNumber" placeholder="Contact number" value="${w.contactNumber || ""}">
 
@@ -7024,11 +7880,16 @@ function manpowerRequestForm() {
 
       <div class="form-grid">
         <select name="position" required>
-          <option>Skilled</option>
-          <option>Helper</option>
-          <option>Engineer</option>
-          <option>Operator</option>
-        </select>
+  <option value="Foreman">Foreman</option>
+  <option value="Mason">Mason</option>
+  <option value="Carpenter">Carpenter</option>
+  <option value="Steelman">Steelman</option>
+  <option value="Electrician">Electrician</option>
+  <option value="Plumber">Plumber</option>
+  <option value="Helper">Helper</option>
+  <option value="Engineer">Engineer</option>
+  <option value="Operator">Operator</option>
+</select>
 
         <input name="quantityNeeded" type="number" min="1" placeholder="Quantity needed" required>
 
@@ -7079,4 +7940,766 @@ async function reviewManpowerRequest(id, action) {
 
   alert(`Request ${action}d.`);
   location.reload();
+}
+
+async function productivityPage() {
+  layout("Productivity Analytics");
+
+  const projects = await api("/api/projects/my-projects").catch(() => []);
+  let selectedProject =
+    localStorage.getItem("selectedProductivityProject") || "";
+
+  const projectExists = projects.some((p) => {
+    return String(p._id) === String(selectedProject);
+  });
+
+  if (!projectExists) {
+    selectedProject = projects?.[0]?._id || "";
+    localStorage.setItem("selectedProductivityProject", selectedProject);
+  }
+
+  const query = selectedProject ? `?project=${selectedProject}` : "";
+  const rows = await api(`/api/productivity${query}`);
+  const summary = await api(`/api/productivity/summary${query}`);
+
+  const lowRecords = rows.filter((r) => {
+    const rate =
+      Number(r.plannedOutput || 0) > 0
+        ? Math.round(
+            (Number(r.actualOutput || 0) / Number(r.plannedOutput || 0)) * 100,
+          )
+        : 0;
+
+    return rate < 60;
+  });
+
+  window.productivityRows = rows;
+
+  const groupedAlerts = groupLowProductivityAlerts(rows);
+  const ranked = getWorkItemRanking(rows);
+  const topRecord = ranked[0];
+
+  const projectOptions = projects
+    .map(
+      (p) => `
+        <option value="${p._id}" ${selectedProject === p._id ? "selected" : ""}>
+          ${p.name}
+        </option>
+      `,
+    )
+    .join("");
+
+  const averageRate = Number(summary.averageRate || 0);
+
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <div class="form-grid">
+        <div>
+          <label>Select Project</label>
+          <select onchange="changeProductivityProject(this.value)">
+            ${projectOptions}
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="productivity-hero">
+      <div class="productivity-banner">
+        <p class="eyebrow">Phase 3D-B</p>
+        <h2>Productivity Analytics & Performance Monitoring</h2>
+        <p>
+          Monitor planned output, actual output, productivity rate,
+          worker performance, and low productivity alerts.
+        </p>
+      </div>
+
+      <div class="productivity-summary">
+        <div class="productivity-stat">
+          <span>Average Productivity</span>
+          <b>${averageRate}%</b>
+        </div>
+
+        <div class="productivity-stat">
+          <span>Total Actual Output</span>
+          <b>${summary.totalActual || 0}</b>
+        </div>
+      </div>
+    </section>
+
+    <section class="kpi-grid">
+      <div class="kpi-card blue">
+        <span class="kpi-icon">📋</span>
+        <small>Total Records</small>
+        <h3>${summary.totalRecords || 0}</h3>
+        <p>Productivity logs</p>
+      </div>
+
+      <div class="kpi-card green">
+        <span class="kpi-icon">🎯</span>
+        <small>Planned Output</small>
+        <h3>${summary.totalPlanned || 0}</h3>
+        <p>Target output</p>
+      </div>
+
+      <div class="kpi-card orange">
+        <span class="kpi-icon">🏗️</span>
+        <small>Actual Output</small>
+        <h3>${summary.totalActual || 0}</h3>
+        <p>Completed output</p>
+      </div>
+
+      <div class="kpi-card red">
+        <span class="kpi-icon">⚠️</span>
+        <small>Low Productivity</small>
+        <h3>${lowRecords.length}</h3>
+        <p>Below 60%</p>
+      </div>
+    </section>
+
+    <section class="productivity-grid">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Trend</p>
+            <h3>Planned vs Actual Output</h3>
+          </div>
+        </div>
+        <canvas id="productivityChart"></canvas>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Ranking</p>
+            <h3>Work Item Performance</h3>
+          </div>
+        </div>
+
+        <div class="worker-rank-list">
+          ${
+            ranked.length
+              ? ranked
+                  .slice(0, 5)
+                  .map((r, i) => {
+                    const rate =
+                      Number(r.plannedOutput || 0) > 0
+                        ? Math.round(
+                            (Number(r.actualOutput || 0) /
+                              Number(r.plannedOutput || 0)) *
+                              100,
+                          )
+                        : 0;
+
+                    return `
+                      <div class="worker-rank-card">
+                        <div>
+                          <h4>#${i + 1} ${r.workItem || "Work Item"}</h4>
+                          <p>${r.project?.name || "Project"} • ${date(r.date)}</p>
+                        </div>
+                        <span class="worker-score">${rate}%</span>
+                      </div>
+                    `;
+                  })
+                  .join("")
+              : `<div class="empty-state">No productivity records yet.</div>`
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard-grid two">
+      <div class="panel danger-panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">Alerts</p>
+      <h3>Low Productivity Summary</h3>
+    </div>
+
+    <span class="alert-count-badge">
+      ${summary.lowPerformance || 0}
+    </span>
+  </div>
+
+  <div class="productivity-alert-scroll">
+    ${
+      groupedAlerts.length
+        ? groupedAlerts
+            .map(
+              (g) => `
+                <div class="productivity-alert-item ${g.lowestRate < 40 ? "critical" : "high"}">
+                  <div class="productivity-alert-top">
+                    <span class="severity-pill ${g.lowestRate < 40 ? "critical" : "high"}">
+                      ${g.lowestRate < 40 ? "CRITICAL" : "HIGH"}
+                    </span>
+
+                    <strong>${g.workItem}</strong>
+                    <b>${g.count} alert(s)</b>
+                  </div>
+
+                  <p>${g.project} • Lowest Rate: ${g.lowestRate}%</p>
+
+                  <button
+                    class="btn secondary"
+                    onclick="showGroupedProductivityAlert('${safeJsString(g.key)}')"
+                  >
+                    View Details
+                  </button>
+                </div>
+              `,
+            )
+            .join("")
+        : `<div class="empty-state">No low productivity alerts detected.</div>`
+    }
+  </div>
+</div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Top Performer</p>
+            <h3>Highest Output Record</h3>
+          </div>
+        </div>
+
+        ${
+          topRecord
+            ? `
+              <div class="productivity-stat">
+                <span>${topRecord.workItem || "Work Item"}</span>
+                <b>
+                  ${
+                    Number(topRecord.plannedOutput || 0) > 0
+                      ? Math.round(
+                          (Number(topRecord.actualOutput || 0) /
+                            Number(topRecord.plannedOutput || 0)) *
+                            100,
+                        )
+                      : 0
+                  }%
+                </b>
+                <p>
+                  Planned: ${topRecord.plannedOutput || 0}
+                  • Actual: ${topRecord.actualOutput || 0}
+                  ${topRecord.unit || ""}
+                </p>
+              </div>
+            `
+            : `<div class="empty-state">No top performer yet.</div>`
+        }
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Records</p>
+          <h3>Productivity Logs</h3>
+        </div>
+
+        ${
+          user.role === "admin"
+            ? `<button class="btn" onclick="productivityForm()">Add Productivity</button>`
+            : ""
+        }
+
+<button class="btn secondary" onclick="downloadProductivityExcel()">
+  Export Excel
+</button>
+      </div>
+
+      <div id="productivityTable"></div>
+    </section>
+  `;
+
+  renderProductivityTable(rows);
+  renderProductivityChart(rows);
+}
+
+function getWorkItemRanking(rows = []) {
+  const grouped = {};
+
+  rows.forEach((r) => {
+    const projectName = r.project?.name || "No Project";
+    const workItem = r.workItem || "Work Item";
+    const key = `${projectName}-${workItem}`;
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        workItem,
+        project: projectName,
+        planned: 0,
+        actual: 0,
+        count: 0,
+      };
+    }
+
+    grouped[key].planned += Number(r.plannedOutput || 0);
+    grouped[key].actual += Number(r.actualOutput || 0);
+    grouped[key].count += 1;
+  });
+
+  return Object.values(grouped)
+    .map((g) => ({
+      ...g,
+      rate: g.planned > 0 ? Math.round((g.actual / g.planned) * 100) : 0,
+    }))
+    .sort((a, b) => b.rate - a.rate);
+}
+
+function showAllProductivityAlerts() {
+  const rows = window.productivityRows || [];
+
+  const lowRecords = rows.filter((r) => {
+    const rate =
+      Number(r.plannedOutput || 0) > 0
+        ? Math.round(
+            (Number(r.actualOutput || 0) / Number(r.plannedOutput || 0)) * 100,
+          )
+        : 0;
+
+    return rate < 60;
+  });
+
+  modal(`
+    <h3>All Low Productivity Alerts</h3>
+
+    <div class="productivity-alert-scroll modal-alert-scroll">
+      ${
+        lowRecords.length
+          ? lowRecords
+              .map((r) => {
+                const rate =
+                  Number(r.plannedOutput || 0) > 0
+                    ? Math.round(
+                        (Number(r.actualOutput || 0) /
+                          Number(r.plannedOutput || 0)) *
+                          100,
+                      )
+                    : 0;
+
+                const severity =
+                  rate < 40 ? "critical" : rate < 60 ? "high" : "medium";
+
+                return `
+                  <div class="productivity-alert-item ${severity}">
+                    <div class="productivity-alert-top">
+                      <span class="severity-pill ${severity}">
+                        ${severity.toUpperCase()}
+                      </span>
+
+                      <strong>${r.workItem || "Work Item"}</strong>
+
+                      <b>${rate}%</b>
+                    </div>
+
+                    <p>${r.project?.name || "Project"} • ${date(r.date)}</p>
+
+                    <small>
+                      ${
+                        r.aiRecommendation ||
+                        "Review manpower allocation and work execution."
+                      }
+                    </small>
+                  </div>
+                `;
+              })
+              .join("")
+          : `<div class="empty-state">No low productivity alerts detected.</div>`
+      }
+    </div>
+  `);
+}
+
+function safeJsString(value = "") {
+  return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function downloadProductivityExcel() {
+  try {
+    const projectId = localStorage.getItem("selectedProductivityProject") || "";
+
+    const url = projectId
+      ? `/api/export/productivity-excel?project=${projectId}`
+      : "/api/export/productivity-excel";
+
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to export productivity report.");
+    }
+
+    const blob = await res.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = downloadUrl;
+    a.download = "productivity-report.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    window.URL.revokeObjectURL(downloadUrl);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function changeProductivityProject(projectId) {
+  localStorage.setItem("selectedProductivityProject", projectId);
+  productivityPage();
+}
+
+function renderProductivityTable(rows) {
+  qs("#productivityTable").innerHTML = table(
+    rows.map((r) => {
+      const rate =
+        Number(r.plannedOutput || 0) > 0
+          ? Math.round(
+              (Number(r.actualOutput || 0) / Number(r.plannedOutput || 0)) *
+                100,
+            )
+          : 0;
+
+      return {
+        ...r,
+        rate: `${rate}%`,
+        actions:
+          user.role === "admin"
+            ? `<button class="btn danger" onclick="del('/api/productivity','${r._id}')">Delete</button>`
+            : "",
+      };
+    }),
+    [
+      { label: "Project", render: (r) => r.project?.name || "-" },
+      { label: "Date", render: (r) => date(r.date) },
+      { label: "Work Item", key: "workItem" },
+      { label: "Workers", key: "workers" },
+      { label: "Attendance", render: (r) => r.attendance || 0 },
+      { label: "Planned", key: "plannedOutput" },
+      { label: "Actual", key: "actualOutput" },
+      { label: "Unit", key: "unit" },
+      { label: "Rate", key: "rate" },
+      { label: "Health", render: (r) => r.productivityHealth || "-" },
+      { label: "Risk", render: (r) => r.delayRisk || "-" },
+      {
+        label: "AI Recommendation",
+        render: (r) => r.aiRecommendation || "-",
+      },
+      { label: "Remarks", render: (r) => r.remarks || "-" },
+      { label: "Encoded By", render: (r) => r.createdBy?.name || "-" },
+    ],
+  );
+}
+
+function renderProductivityChart(rows = []) {
+  const ctx = document.getElementById("productivityChart");
+  if (!ctx) return;
+
+  if (window.productivityChartInstance) {
+    window.productivityChartInstance.destroy();
+  }
+
+  window.productivityChartInstance = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: rows.map((r) =>
+        new Date(r.date).toLocaleDateString("en-PH", {
+          month: "short",
+          day: "numeric",
+        }),
+      ),
+      datasets: [
+        {
+          label: "Planned Output",
+          data: rows.map((r) => Number(r.plannedOutput || 0)),
+          backgroundColor: "#2563eb",
+          borderRadius: 10,
+        },
+        {
+          label: "Actual Output",
+          data: rows.map((r) => Number(r.actualOutput || 0)),
+          backgroundColor: "#16a34a",
+          borderRadius: 10,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+        tooltip: {
+          callbacks: {
+            title: function (items) {
+              const r = rows[items[0].dataIndex];
+              return `${date(r.date)} - ${r.workItem || "Work Item"}`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function groupLowProductivityAlerts(rows = []) {
+  const grouped = {};
+
+  rows.forEach((r) => {
+    const planned = Number(r.plannedOutput || 0);
+    const actual = Number(r.actualOutput || 0);
+
+    const rate = planned > 0 ? Math.round((actual / planned) * 100) : 0;
+
+    if (rate >= 60) return;
+
+    const projectName = r.project?.name || "No Project";
+    const workItem = r.workItem || "Work Item";
+    const key = `${projectName}-${workItem}`;
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        key,
+        workItem,
+        project: projectName,
+        count: 0,
+        lowestRate: rate,
+        totalPlanned: 0,
+        totalActual: 0,
+        records: [],
+      };
+    }
+
+    grouped[key].count += 1;
+    grouped[key].lowestRate = Math.min(grouped[key].lowestRate, rate);
+    grouped[key].totalPlanned += planned;
+    grouped[key].totalActual += actual;
+    grouped[key].records.push({
+      ...r,
+      rate,
+      alertKey: key,
+    });
+  });
+
+  return Object.values(grouped).sort(
+    (a, b) => a.lowestRate - b.lowestRate || b.count - a.count,
+  );
+}
+
+function showGroupedProductivityAlert(alertKey) {
+  const grouped = groupLowProductivityAlerts(window.productivityRows || []);
+  const group = grouped.find((g) => g.key === alertKey);
+
+  if (!group) {
+    alert("Alert group not found.");
+    return;
+  }
+
+  modal(`
+    <h3>${group.workItem} Alerts</h3>
+    <p>${group.project} • ${group.count} alert(s)</p>
+
+    <div class="productivity-alert-scroll modal-alert-scroll">
+      ${group.records
+        .map((r) => {
+          const severity = r.rate < 40 ? "critical" : "high";
+
+          return `
+            <div class="productivity-alert-item ${severity}">
+              <div class="productivity-alert-top">
+                <span class="severity-pill ${severity}">
+                  ${severity.toUpperCase()}
+                </span>
+                <strong>${r.workItem || "Work Item"}</strong>
+                <b>${r.rate}%</b>
+              </div>
+
+              <p>${r.project?.name || "-"} • ${date(r.date)}</p>
+              <small>${r.aiRecommendation || "Review manpower allocation and execution."}</small>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `);
+}
+
+function changeProductivityProject(projectId) {
+  localStorage.setItem("selectedProductivityProject", projectId);
+  productivityPage();
+}
+
+function filterProductivity() {
+  const keyword = qs("#productivitySearch").value.toLowerCase();
+
+  const filtered = (window.productivityRows || []).filter((r) =>
+    `${r.project?.name || ""} ${r.workItem || ""} ${r.unit || ""} ${r.remarks || ""}`
+      .toLowerCase()
+      .includes(keyword),
+  );
+
+  renderProductivityTable(filtered);
+}
+
+function productivityForm() {
+  const selectedProject =
+    localStorage.getItem("selectedProductivityProject") || "";
+
+  if (!selectedProject) {
+    alert("Please select a project first.");
+    return;
+  }
+
+  modal(`
+    <h3>Add Productivity Record</h3>
+
+    <form onsubmit="saveProductivity(event)">
+      <input type="hidden" name="project" value="${selectedProject}">
+
+      <label>Date</label>
+      <input name="date" type="date" value="${date(new Date())}" required>
+
+      <label>Work Item</label>
+      <input
+        name="workItem"
+        placeholder="Example: CHB Laying / Excavation / Concrete Pouring"
+        required
+      >
+
+      <div class="form-grid">
+        <input name="workers" type="number" min="1" placeholder="No. of Workers" required>
+        <input
+  name="attendance"
+  type="number"
+  min="0"
+  placeholder="Attendance"
+/>
+
+        <input name="plannedOutput" type="number" min="0" placeholder="Planned Output" required>
+        <input name="actualOutput" type="number" min="0" placeholder="Actual Output" required>
+        <input name="unit" placeholder="Unit e.g. sqm, cu.m, pcs" required>
+      </div>
+
+      <label>Remarks</label>
+      <textarea name="remarks" placeholder="Example: Slight delay due to material delivery"></textarea>
+
+      <button class="btn">Save Productivity</button>
+    </form>
+  `);
+}
+
+async function saveProductivity(e) {
+  e.preventDefault();
+
+  const data = Object.fromEntries(new FormData(e.target));
+
+  data.task = null;
+  data.workers = Number(data.workers || 0);
+  data.plannedOutput = Number(data.plannedOutput || 0);
+  data.actualOutput = Number(data.actualOutput || 0);
+
+  await api("/api/productivity", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  alert("Productivity record saved.");
+  location.reload();
+}
+
+function renderProductivityCharts(rows) {
+  const labels = rows.map((r) => `${date(r.date)} - ${r.workItem}`);
+
+  new Chart(document.getElementById("productivityChart"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Planned Output",
+          data: rows.map((r) => Number(r.plannedOutput || 0)),
+          backgroundColor: "#2563eb",
+          borderRadius: 10,
+        },
+        {
+          label: "Actual Output",
+          data: rows.map((r) => Number(r.actualOutput || 0)),
+          backgroundColor: "#16a34a",
+          borderRadius: 10,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+      },
+    },
+  });
+
+  new Chart(document.getElementById("productivityRateChart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Productivity Rate %",
+          data: rows.map((r) => Number(r.productivityRate || 0)),
+          borderColor: "#c87919",
+          backgroundColor: "rgba(200,121,25,0.12)",
+          fill: true,
+          tension: 0.4,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 120,
+        },
+      },
+      plugins: {
+        legend: { position: "bottom" },
+      },
+    },
+  });
+}
+
+function getWorkItemRanking(rows) {
+  const grouped = {};
+
+  rows.forEach((r) => {
+    const key = r.workItem || "Work Item";
+
+    if (!grouped[key]) {
+      grouped[key] = {
+        workItem: key,
+        project: r.project?.name || "-",
+        planned: 0,
+        actual: 0,
+        count: 0,
+      };
+    }
+
+    grouped[key].planned += Number(r.plannedOutput || 0);
+    grouped[key].actual += Number(r.actualOutput || 0);
+    grouped[key].count += 1;
+  });
+
+  return Object.values(grouped)
+    .map((g) => ({
+      ...g,
+      rate: g.planned > 0 ? Math.round((g.actual / g.planned) * 100) : 0,
+    }))
+    .sort((a, b) => b.rate - a.rate);
 }

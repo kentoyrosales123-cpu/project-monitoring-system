@@ -14,6 +14,12 @@ const projectFilter = async (user) => {
     };
   }
 
+  if (user.role === "worker") {
+    return {
+      user: user._id,
+    };
+  }
+
   return {};
 };
 
@@ -22,7 +28,11 @@ exports.getWorkers = async (req, res) => {
     const filter = await projectFilter(req.user);
 
     const workers = await Worker.find(filter)
-      .populate("assignedProject", "name")
+      .populate(
+        "assignedProject",
+        "name location status progress targetCompletionDate",
+      )
+      .populate("user", "name email role")
       .sort({ createdAt: -1 });
 
     res.json(workers);
@@ -40,6 +50,7 @@ exports.createWorker = async (req, res) => {
     }
 
     const worker = await Worker.create({
+      user: req.body.user || null,
       fullName: req.body.fullName,
       position: req.body.position,
       contactNumber: req.body.contactNumber || "",
@@ -63,19 +74,24 @@ exports.updateWorker = async (req, res) => {
       });
     }
 
-    const worker = await Worker.findByIdAndUpdate(
-      req.params.id,
-      {
-        fullName: req.body.fullName,
-        position: req.body.position,
-        contactNumber: req.body.contactNumber || "",
-        ratePerDay: Number(req.body.ratePerDay || 0),
-        status: req.body.status || "Available",
-        assignedProject: req.body.assignedProject || null,
-        remarks: req.body.remarks || "",
-      },
-      { new: true, runValidators: true },
-    );
+    const updateData = {
+      fullName: req.body.fullName,
+      position: req.body.position,
+      contactNumber: req.body.contactNumber || "",
+      ratePerDay: Number(req.body.ratePerDay || 0),
+      status: req.body.status || "Available",
+      assignedProject: req.body.assignedProject || null,
+      remarks: req.body.remarks || "",
+    };
+
+    if (req.body.user) {
+      updateData.user = req.body.user;
+    }
+
+    const worker = await Worker.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+      runValidators: true,
+    });
 
     if (!worker) {
       return res.status(404).json({ message: "Worker not found." });
