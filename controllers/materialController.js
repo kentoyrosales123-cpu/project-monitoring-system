@@ -1,14 +1,24 @@
 const Material = require("../models/Material");
 const Project = require("../models/Project");
 
-const projectAccessFilter = async (user) => {
+const projectAccessFilter = async (user, requestedProjectId) => {
   if (user.role === "staff") {
     const projects = await Project.find({ assignedStaff: user._id }).select(
       "_id",
     );
+    const projectIds = projects.map((project) => project._id);
+
+    if (
+      requestedProjectId &&
+      !projectIds.some(
+        (projectId) => String(projectId) === String(requestedProjectId),
+      )
+    ) {
+      return { project: { $in: [] } };
+    }
 
     return {
-      project: { $in: projects.map((project) => project._id) },
+      project: requestedProjectId || { $in: projectIds },
     };
   }
 
@@ -18,10 +28,24 @@ const projectAccessFilter = async (user) => {
 
   if (user.role === "client") {
     const projects = await Project.find({ clientUser: user._id }).select("_id");
+    const projectIds = projects.map((project) => project._id);
+
+    if (
+      requestedProjectId &&
+      !projectIds.some(
+        (projectId) => String(projectId) === String(requestedProjectId),
+      )
+    ) {
+      return { project: { $in: [] } };
+    }
 
     return {
-      project: { $in: projects.map((project) => project._id) },
+      project: requestedProjectId || { $in: projectIds },
     };
+  }
+
+  if (requestedProjectId) {
+    return { project: requestedProjectId };
   }
 
   return {};
@@ -41,7 +65,7 @@ const canManageProjectMaterial = async (user, material) => {
 
 exports.getMaterials = async (req, res) => {
   try {
-    const query = await projectAccessFilter(req.user);
+    const query = await projectAccessFilter(req.user, req.query.project);
 
     const materials = await Material.find(query)
       .populate("project", "name")

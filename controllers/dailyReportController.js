@@ -18,15 +18,41 @@ function parseJsonArray(value) {
 exports.getReports = async (req, res) => {
   try {
     let query = {};
+    let allowedProjectIds = null;
 
     if (req.user.role === "staff") {
       const myProjects = await Project.find({
         assignedStaff: req.user._id,
       }).select("_id");
+      allowedProjectIds = myProjects.map((p) => p._id);
 
       query.project = {
-        $in: myProjects.map((p) => p._id),
+        $in: allowedProjectIds,
       };
+    }
+
+    if (req.user.role === "client") {
+      const clientProjects = await Project.find({
+        clientUser: req.user._id,
+      }).select("_id");
+      allowedProjectIds = clientProjects.map((p) => p._id);
+
+      query.project = {
+        $in: allowedProjectIds,
+      };
+    }
+
+    if (req.query.project) {
+      if (
+        allowedProjectIds &&
+        !allowedProjectIds.some(
+          (projectId) => String(projectId) === String(req.query.project),
+        )
+      ) {
+        return res.json([]);
+      }
+
+      query.project = req.query.project;
     }
 
     const reports = await DailyReport.find(query)

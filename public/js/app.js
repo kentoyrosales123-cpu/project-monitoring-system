@@ -97,7 +97,7 @@ function layout(title) {
         title: "MAIN",
         items: [
           ["📊", "Client Dashboard", "/client-dashboard.html"],
-          ["📅", "Project Timeline", "/client-dashboard.html"],
+          ["📅", "Project Timeline", "/client-timeline.html"],
         ],
       },
     ];
@@ -2399,6 +2399,7 @@ if (page === "materials.html") materialsPage();
 if (page === "equipment-requests.html") equipmentRequestsPage();
 if (page === "gantt.html") ganttPage();
 if (page === "client-dashboard.html") clientDashboard();
+if (page === "client-timeline.html") clientTimelinePage();
 if (page === "expense-analytics.html") expenseAnalyticsPage();
 if (page === "workers.html") workersPage();
 if (page === "manpower-requests.html") manpowerRequestsPage();
@@ -6499,15 +6500,15 @@ async function markNotificationsRead() {
 
 async function clientDashboard() {
   layout("Client Project Portal");
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <p class="empty-state">Loading client dashboard...</p>
+    </section>
+  `;
 
   const projects = await api("/api/projects");
-  const tasks = await api("/api/tasks");
-  const reports = await api("/api/reports").catch(() => []);
-  const materials = await api("/api/materials").catch(() => []);
 
-  const project = projects[0];
-
-  if (!project) {
+  if (!projects.length) {
     qs("#content").innerHTML = `
       <section class="panel">
         <h3>No Project Assigned</h3>
@@ -6518,6 +6519,33 @@ async function clientDashboard() {
     `;
     return;
   }
+
+  const storedProjectId = localStorage.getItem("selectedClientProject") || "";
+  const selectedProjectId = projects.some(
+    (p) => String(p._id) === String(storedProjectId),
+  )
+    ? storedProjectId
+    : projects[0]._id;
+  const project = projects.find(
+    (p) => String(p._id) === String(selectedProjectId),
+  );
+  const projectOptions = projects
+    .map(
+      (p) => `
+        <option value="${p._id}" ${
+          String(selectedProjectId) === String(p._id) ? "selected" : ""
+        }>
+          ${p.name}
+        </option>
+      `,
+    )
+    .join("");
+  const projectQuery = encodeURIComponent(project._id);
+  const [tasks, reports, materials] = await Promise.all([
+    api(`/api/tasks?project=${projectQuery}`).catch(() => []),
+    api(`/api/reports?project=${projectQuery}`).catch(() => []),
+    api(`/api/materials?project=${projectQuery}`).catch(() => []),
+  ]);
 
   const projectTasks = tasks.filter(
     (t) => String(t.project?._id || t.project) === String(project._id),
@@ -6539,11 +6567,24 @@ async function clientDashboard() {
   ).length;
 
   qs("#content").innerHTML = `
+    ${
+      projects.length > 1
+        ? `
+          <section class="panel">
+            <label>Select Project</label>
+            <select onchange="changeClientProject(this.value)">
+              ${projectOptions}
+            </select>
+          </section>
+        `
+        : ""
+    }
+
     <section class="staff-hero">
       <div>
         <p class="eyebrow">Client Project Portal</p>
         <h2>${project.name}</h2>
-        <p>${project.clientName || "Client"} • ${project.location || "No location"}</p>
+        <p>${project.clientName || "Client"} - ${project.location || "No location"}</p>
 
         <div class="staff-project-meta">
           <span>Status: <b>${project.status}</b></span>
@@ -6610,7 +6651,7 @@ async function clientDashboard() {
                       <div class="timeline-dot ${statusClass(t.status)}"></div>
                       <div>
                         <b>${t.title}</b>
-                        <p>${date(t.startDate)} → ${date(t.dueDate)}</p>
+                        <p>${date(t.startDate)} to ${date(t.dueDate)}</p>
                         <small>${t.status}</small>
                       </div>
                     </div>
@@ -6645,7 +6686,7 @@ async function clientDashboard() {
                           <h4>${m.materialName}</h4>
                           <p>
                             Delivered: ${m.quantityDelivered || 0} ${m.unit || ""}
-                            • Used: ${m.quantityUsed || 0} ${m.unit || ""}
+                            - Used: ${m.quantityUsed || 0} ${m.unit || ""}
                           </p>
                         </div>
 
@@ -6683,6 +6724,316 @@ async function clientDashboard() {
       </div>
     </section>
   `;
+}
+
+function changeClientProject(projectId) {
+  localStorage.setItem("selectedClientProject", projectId);
+  clientDashboard();
+}
+
+async function clientTimelinePage() {
+  layout("Project Timeline");
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <p class="empty-state">Loading project timeline...</p>
+    </section>
+  `;
+
+  const projects = await api("/api/projects");
+
+  if (!projects.length) {
+    qs("#content").innerHTML = `
+      <section class="panel">
+        <h3>No Project Assigned</h3>
+        <p class="empty-state">
+          No project has been linked to your client account yet.
+        </p>
+      </section>
+    `;
+    return;
+  }
+
+  const storedProjectId = localStorage.getItem("selectedClientProject") || "";
+  const selectedProjectId = projects.some(
+    (p) => String(p._id) === String(storedProjectId),
+  )
+    ? storedProjectId
+    : projects[0]._id;
+  const project = projects.find(
+    (p) => String(p._id) === String(selectedProjectId),
+  );
+  const projectOptions = projects
+    .map(
+      (p) => `
+        <option value="${p._id}" ${
+          String(selectedProjectId) === String(p._id) ? "selected" : ""
+        }>
+          ${p.name}
+        </option>
+      `,
+    )
+    .join("");
+  const projectQuery = encodeURIComponent(project._id);
+  const [tasks, reports, materials] = await Promise.all([
+    api(`/api/tasks?project=${projectQuery}`).catch(() => []),
+    api(`/api/reports?project=${projectQuery}`).catch(() => []),
+    api(`/api/materials?project=${projectQuery}`).catch(() => []),
+  ]);
+
+  const projectTasks = tasks
+    .filter((t) => String(t.project?._id || t.project) === String(project._id))
+    .sort((a, b) => new Date(a.startDate || a.dueDate) - new Date(b.startDate || b.dueDate));
+  const projectReports = reports
+    .filter((r) => String(r.project?._id || r.project) === String(project._id))
+    .sort((a, b) => new Date(b.reportDate || b.createdAt) - new Date(a.reportDate || a.createdAt));
+  const projectMaterials = materials
+    .filter((m) => String(m.project?._id || m.project) === String(project._id))
+    .sort((a, b) => new Date(b.deliveryDate || b.receivedAt || b.createdAt) - new Date(a.deliveryDate || a.receivedAt || a.createdAt));
+
+  const now = new Date();
+  const targetDate = project.targetCompletionDate
+    ? new Date(project.targetCompletionDate)
+    : null;
+  const daysRemaining = targetDate
+    ? Math.ceil((targetDate - now) / (1000 * 60 * 60 * 24))
+    : null;
+  const completedTasks = projectTasks.filter((t) => t.status === "Done").length;
+  const delayedTasks = projectTasks.filter(
+    (t) =>
+      t.status === "Delayed" ||
+      (t.status !== "Done" && t.dueDate && new Date(t.dueDate) < now),
+  );
+  const latestReport = projectReports[0];
+
+  const events = [
+    {
+      date: project.startDate,
+      title: "Project Started",
+      detail: project.location || "Project kickoff",
+      status: "approved",
+    },
+    ...projectTasks.map((task) => ({
+      date: task.dueDate || task.startDate,
+      title: task.title,
+      detail: `${date(task.startDate)} to ${date(task.dueDate)}`,
+      status: task.status,
+    })),
+    ...projectReports.map((report) => ({
+      date: report.reportDate || report.createdAt,
+      title: "Daily Report",
+      detail: report.workAccomplished || report.status || "Site activity recorded",
+      status: report.status || "Pending",
+    })),
+    ...projectMaterials.map((material) => ({
+      date: material.deliveryDate || material.receivedAt || material.createdAt,
+      title: `${material.materialName} Delivered`,
+      detail: `${material.quantityDelivered || 0} ${material.unit || ""}`,
+      status: "Delivered",
+    })),
+    {
+      date: project.targetCompletionDate,
+      title: "Target Completion",
+      detail: project.status || "Project target",
+      status: project.status,
+    },
+  ]
+    .filter((event) => event.date)
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <div class="form-grid">
+        ${
+          projects.length > 1
+            ? `
+              <div>
+                <label>Select Project</label>
+                <select onchange="changeClientTimelineProject(this.value)">
+                  ${projectOptions}
+                </select>
+              </div>
+            `
+            : ""
+        }
+        <div>
+          <label>Project</label>
+          <input value="${project.name}" readonly>
+        </div>
+      </div>
+    </section>
+
+    <section class="staff-hero">
+      <div>
+        <p class="eyebrow">Project Timeline</p>
+        <h2>${project.name}</h2>
+        <p>${project.clientName || "Client"} - ${project.location || "No location"}</p>
+        <div class="staff-project-meta">
+          <span>Status: <b>${project.status}</b></span>
+          <span>Start: <b>${date(project.startDate)}</b></span>
+          <span>Target: <b>${date(project.targetCompletionDate)}</b></span>
+        </div>
+      </div>
+
+      <div class="staff-progress-card">
+        <span>${project.progress || 0}%</span>
+        <p>Project Completion</p>
+        <div class="progress large">
+          <span style="width:${percent(project.progress)}%"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="kpi-grid">
+      <div class="kpi-card blue">
+        <small>Completed Tasks</small>
+        <h3>${completedTasks}/${projectTasks.length}</h3>
+        <p>Verified work progress</p>
+      </div>
+      <div class="kpi-card red">
+        <small>Delayed Items</small>
+        <h3>${delayedTasks.length}</h3>
+        <p>Past due or delayed</p>
+      </div>
+      <div class="kpi-card green">
+        <small>Days Remaining</small>
+        <h3>${daysRemaining === null ? "-" : Math.max(0, daysRemaining)}</h3>
+        <p>${daysRemaining !== null && daysRemaining < 0 ? "Past target date" : "Until target completion"}</p>
+      </div>
+      <div class="kpi-card orange">
+        <small>Latest Report</small>
+        <h3>${latestReport ? date(latestReport.reportDate || latestReport.createdAt) : "-"}</h3>
+        <p>${projectReports.length} report(s)</p>
+      </div>
+    </section>
+
+    <section class="dashboard-grid two">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Milestones</p>
+            <h3>Chronological Timeline</h3>
+          </div>
+        </div>
+        <div class="staff-timeline">
+          ${
+            events.length
+              ? events
+                  .map(
+                    (event) => `
+                      <div class="timeline-item">
+                        <div class="timeline-dot ${statusClass(event.status)}"></div>
+                        <div>
+                          <b>${event.title}</b>
+                          <p>${date(event.date)}</p>
+                          <small>${event.detail || "-"}</small>
+                        </div>
+                      </div>
+                    `,
+                  )
+                  .join("")
+              : `<div class="empty-state">No timeline events yet.</div>`
+          }
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Task Schedule</p>
+            <h3>Work Breakdown</h3>
+          </div>
+        </div>
+        <div class="staff-timeline">
+          ${
+            projectTasks.length
+              ? projectTasks
+                  .map(
+                    (task) => `
+                      <div class="timeline-item">
+                        <div class="timeline-dot ${statusClass(task.status)}"></div>
+                        <div>
+                          <b>${task.title}</b>
+                          <p>${date(task.startDate)} to ${date(task.dueDate)}</p>
+                          <small>${task.status || "-"}${task.assignedTo?.name ? ` - ${task.assignedTo.name}` : ""}</small>
+                        </div>
+                      </div>
+                    `,
+                  )
+                  .join("")
+              : `<div class="empty-state">No tasks added yet.</div>`
+          }
+        </div>
+      </div>
+    </section>
+
+    <section class="dashboard-grid two">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Reports</p>
+            <h3>Daily Report Markers</h3>
+          </div>
+        </div>
+        <div class="staff-timeline">
+          ${
+            projectReports.length
+              ? projectReports.slice(0, 8).map(
+                  (report) => `
+                    <div class="timeline-item">
+                      <div class="timeline-dot ${statusClass(report.status)}"></div>
+                      <div>
+                        <b>${date(report.reportDate || report.createdAt)}</b>
+                        <p>${report.workAccomplished || "Site activity recorded"}</p>
+                        <small>${report.photos?.length || 0} photo(s) - ${report.status || "Pending"}</small>
+                      </div>
+                    </div>
+                  `,
+                ).join("")
+              : `<div class="empty-state">No daily reports submitted yet.</div>`
+          }
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Deliveries</p>
+            <h3>Material Delivery Markers</h3>
+          </div>
+        </div>
+        <div class="staff-material-list">
+          ${
+            projectMaterials.length
+              ? projectMaterials.slice(0, 8).map((material) => {
+                  const remaining = Number(
+                    material.inventoryOnHand ??
+                      Number(material.quantityDelivered || 0) -
+                        Number(material.quantityUsed || 0),
+                  );
+
+                  return `
+                    <div class="staff-material-card">
+                      <div>
+                        <h4>${material.materialName}</h4>
+                        <p>${date(material.deliveryDate || material.receivedAt || material.createdAt)} - ${material.quantityDelivered || 0} ${material.unit || ""} delivered</p>
+                      </div>
+                      <span class="${remaining <= 5 ? "material-low" : "material-ok"}">
+                        ${remaining} ${material.unit || ""} left
+                      </span>
+                    </div>
+                  `;
+                }).join("")
+              : `<div class="empty-state">No material deliveries yet.</div>`
+          }
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function changeClientTimelineProject(projectId) {
+  localStorage.setItem("selectedClientProject", projectId);
+  clientTimelinePage();
 }
 
 async function deleteNotification(id) {
