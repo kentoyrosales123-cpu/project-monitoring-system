@@ -1,14 +1,81 @@
 const MaterialRequest = require("../models/MaterialRequest");
 const Material = require("../models/Material");
+const Project = require("../models/Project");
 const User = require("../models/User");
 const createNotification = require("../utils/createNotification");
+
+const escapeRegex = (value = "") => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const materialNameQuery = (materialName) =>
+  new RegExp(`^${escapeRegex(materialName.trim())}$`, "i");
+
+const currentStock = (material) => {
+  const inventoryOnHand = Number(material.inventoryOnHand || 0);
+  const computedStock =
+    Number(material.quantityDelivered || 0) - Number(material.quantityUsed || 0);
+
+  return inventoryOnHand > 0 ? inventoryOnHand : computedStock;
+};
+
+const canAccessProject = async (user, projectId) => {
+  if (["admin", "inventory"].includes(user.role)) return true;
+  if (!projectId) return false;
+
+  if (user.role === "staff") {
+    const project = await Project.findOne({
+      _id: projectId,
+      assignedStaff: user._id,
+    }).select("_id");
+
+    return Boolean(project);
+  }
+
+  if (user.role === "client") {
+    const project = await Project.findOne({
+      _id: projectId,
+      clientUser: user._id,
+    }).select("_id");
+
+    return Boolean(project);
+  }
+
+  return false;
+};
+
+const reservedStockForMaterial = async (materialName, excludeRequestId) => {
+  const activeRequests = await MaterialRequest.find({
+    materialName: materialNameQuery(materialName),
+    status: { $in: ["Approved", "Out for Delivery"] },
+    ...(excludeRequestId ? { _id: { $ne: excludeRequestId } } : {}),
+  }).select("quantity");
+
+  return activeRequests.reduce(
+    (sum, request) => sum + Number(request.quantity || 0),
+    0,
+  );
+};
 
 exports.getRequests = async (req, res) => {
   try {
     let query = {};
 
     if (req.user.role === "staff") {
-      query.requestedBy = req.user._id;
+      const projects = await Project.find({ assignedStaff: req.user._id }).select(
+        "_id",
+      );
+      const projectIds = projects.map((project) => project._id);
+
+      query = {
+        $or: [{ requestedBy: req.user._id }, { project: { $in: projectIds } }],
+      };
+    }
+
+    if (req.user.role === "client") {
+      const projects = await Project.find({ clientUser: req.user._id }).select(
+        "_id",
+      );
+
+      query.project = { $in: projects.map((project) => project._id) };
     }
 
     const requests = await MaterialRequest.find(query)
@@ -27,11 +94,24 @@ exports.getRequests = async (req, res) => {
 exports.createRequest = async (req, res) => {
   try {
     const { project, materialName, quantity, unit, purpose } = req.body;
+    const requestQty = Number(quantity || 0);
+
+    if (!(await canAccessProject(req.user, project))) {
+      return res.status(403).json({
+        message: "You can only request materials for your assigned project.",
+      });
+    }
+
+    if (!materialName || requestQty <= 0) {
+      return res.status(400).json({
+        message: "Material name and valid quantity are required.",
+      });
+    }
 
     const request = await MaterialRequest.create({
       project,
       materialName,
-      quantity,
+      quantity: requestQty,
       unit,
       purpose,
       requestedBy: req.user._id,
@@ -66,9 +146,15 @@ exports.approveRequest = async (req, res) => {
       return res.status(404).json({ message: "Material request not found." });
     }
 
+    if (request.status !== "Pending") {
+      return res.status(400).json({
+        message: "Only pending material requests can be approved.",
+      });
+    }
+
     const material = await Material.findOne({
       project: null,
-      materialName: new RegExp(`^${request.materialName.trim()}$`, "i"),
+      materialName: materialNameQuery(request.materialName),
     });
 
     if (!material) {
@@ -77,7 +163,11 @@ exports.approveRequest = async (req, res) => {
       });
     }
 
-    const availableStock = Number(material.quantityDelivered || 0);
+    const reservedStock = await reservedStockForMaterial(
+      request.materialName,
+      request._id,
+    );
+    const availableStock = Math.max(0, currentStock(material) - reservedStock);
 
     if (availableStock < Number(request.quantity || 0)) {
       return res.status(400).json({
@@ -114,6 +204,12 @@ exports.rejectRequest = async (req, res) => {
 
     if (!request) {
       return res.status(404).json({ message: "Material request not found." });
+    }
+
+    if (!["Pending", "Approved"].includes(request.status)) {
+      return res.status(400).json({
+        message: "Only pending or approved material requests can be rejected.",
+      });
     }
 
     request.status = "Rejected";
@@ -187,10 +283,16 @@ exports.confirmReceived = async (req, res) => {
       });
     }
 
+    if (!(await canAccessProject(req.user, request.project))) {
+      return res.status(403).json({
+        message: "You cannot confirm materials for this project.",
+      });
+    }
+
     // FIND WAREHOUSE MATERIAL
     const warehouseMaterial = await Material.findOne({
       project: null,
-      materialName: new RegExp(`^${request.materialName.trim()}$`, "i"),
+      materialName: materialNameQuery(request.materialName),
     });
 
     if (!warehouseMaterial) {
@@ -201,7 +303,7 @@ exports.confirmReceived = async (req, res) => {
 
     const requestQty = Number(request.quantity || 0);
 
-    const availableStock = Number(warehouseMaterial.quantityDelivered || 0);
+    const availableStock = currentStock(warehouseMaterial);
 
     if (availableStock < requestQty) {
       return res.status(400).json({
@@ -210,12 +312,12 @@ exports.confirmReceived = async (req, res) => {
     }
 
     // ✅ AUTOMATIC DEDUCT FROM WAREHOUSE
-    warehouseMaterial.quantityDelivered =
-      Number(warehouseMaterial.quantityDelivered || 0) - requestQty;
-
-    warehouseMaterial.inventoryOnHand = Number(
-      warehouseMaterial.quantityDelivered || 0,
+    warehouseMaterial.quantityDelivered = Math.max(
+      0,
+      Number(warehouseMaterial.quantityDelivered || 0) - requestQty,
     );
+
+    warehouseMaterial.inventoryOnHand = availableStock - requestQty;
 
     warehouseMaterial.lastUpdatedBy = req.user._id;
     warehouseMaterial.lastUpdatedAt = new Date();
@@ -230,7 +332,7 @@ exports.confirmReceived = async (req, res) => {
     // ADD TO PROJECT MATERIALS
     let projectMaterial = await Material.findOne({
       project: request.project,
-      materialName: new RegExp(`^${request.materialName.trim()}$`, "i"),
+      materialName: materialNameQuery(request.materialName),
     });
 
     if (projectMaterial) {

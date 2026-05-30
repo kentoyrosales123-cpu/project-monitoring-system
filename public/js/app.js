@@ -3668,12 +3668,12 @@ async function materialRequestForm() {
 
   const materialRows = warehouseMaterials
     .filter((m) => {
-      const remaining = Number(m.quantityDelivered || 0);
+      const remaining = Number(m.inventoryOnHand ?? m.quantityDelivered ?? 0);
 
       return !m.project && remaining > 0;
     })
     .map((m) => {
-      const remaining = Number(m.quantityDelivered || 0);
+      const remaining = Number(m.inventoryOnHand ?? m.quantityDelivered ?? 0);
 
       return `
         <div 
@@ -3684,7 +3684,7 @@ async function materialRequestForm() {
             <b>${m.materialName}</b>
             <small>
               Available: ${remaining} ${m.unit || ""}
-              ${m.category ? `• ${m.category}` : ""}
+              ${m.category ? `- ${m.category}` : ""}
             </small>
           </div>
 
@@ -4040,7 +4040,7 @@ function renderMaterialsTable(rows) {
           { label: "Unit", render: (r) => r.unit || "-" },
           {
             label: "Qty",
-            render: (r) => Number(r.quantityDelivered || 0),
+            render: (r) => Number(r.inventoryOnHand ?? r.quantityDelivered ?? 0),
           },
           {
             label: "Reorder Level",
@@ -4239,7 +4239,9 @@ async function updateMaterial(e, id) {
 }
 
 function restockRequestForm(material = {}) {
-  const currentQty = Number(material.quantityDelivered || 0);
+  const currentQty = Number(
+    material.inventoryOnHand ?? material.quantityDelivered ?? 0,
+  );
 
   modal(`
     <h3>Request Material Restock</h3>

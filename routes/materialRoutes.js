@@ -30,6 +30,12 @@ router.put("/:id", protect, adminOrInventory, async (req, res) => {
       // preserve already released quantity
       const alreadyUsed = Number(material.quantityUsed || 0);
 
+      if (newDelivered < alreadyUsed) {
+        return res.status(400).json({
+          message: "Delivered quantity cannot be less than used quantity.",
+        });
+      }
+
       material.quantityDelivered = newDelivered;
 
       material.inventoryOnHand = newDelivered - alreadyUsed;
@@ -49,6 +55,7 @@ router.put("/:id", protect, adminOrInventory, async (req, res) => {
 router.put(
   "/:id/inventory-on-hand",
   protect,
+  adminOrInventory,
   materialController.updateInventoryOnHand,
 );
 
