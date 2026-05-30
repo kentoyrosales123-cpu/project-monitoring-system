@@ -994,8 +994,9 @@ function projectForm(p = {}) {
       });
     }
 
-    if (form && p.clientUser?._id) {
-      form.clientUser.value = p.clientUser._id;
+    const clientUserId = p.clientUser?._id || p.clientUser;
+    if (form && clientUserId) {
+      form.clientUser.value = clientUserId;
     }
   }, 50);
 }

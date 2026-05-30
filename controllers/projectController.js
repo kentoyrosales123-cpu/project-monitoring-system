@@ -5,6 +5,8 @@ const Manpower = require("../models/Manpower");
 const Equipment = require("../models/Equipment");
 const Worker = require("../models/Worker");
 const Task = require("../models/Task");
+const Notification = require("../models/Notification");
+const User = require("../models/User");
 
 const projectFilter = (user) => {
   if (["admin", "inventory"].includes(user.role)) {
@@ -26,10 +28,32 @@ const projectFilter = (user) => {
   return {};
 };
 
+async function notifyAssignedStaff(project, assignedStaffIds = []) {
+  if (!assignedStaffIds.length) return;
+
+  const staffUsers = await User.find({
+    _id: { $in: assignedStaffIds },
+    role: "staff",
+  }).select("_id");
+
+  if (!staffUsers.length) return;
+
+  await Notification.insertMany(
+    staffUsers.map((staff) => ({
+      user: staff._id,
+      title: "Project Assigned",
+      message: `You have been assigned to project: ${project.name}.`,
+      type: "project_assigned",
+      isRead: false,
+    })),
+  );
+}
+
 exports.getProjects = async (req, res) => {
   try {
     const projects = await Project.find(projectFilter(req.user))
       .populate("assignedStaff", "name email role")
+      .populate("clientUser", "name email role")
       .sort({ createdAt: -1 });
 
     res.json(projects);
@@ -46,6 +70,8 @@ exports.createProject = async (req, res) => {
       progress: Number(req.body.progress || 0),
     });
 
+    await notifyAssignedStaff(project, project.assignedStaff || []);
+
     res.status(201).json(project);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -54,23 +80,48 @@ exports.createProject = async (req, res) => {
 
 exports.updateProject = async (req, res) => {
   try {
+    const existingProject = await Project.findById(req.params.id).select(
+      "assignedStaff",
+    );
+
+    if (!existingProject) {
+      return res.status(404).json({
+        message: "Project not found.",
+      });
+    }
+
+    const updateData = {
+      ...req.body,
+    };
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "budget")) {
+      updateData.budget = Number(req.body.budget || 0);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(req.body, "progress")) {
+      updateData.progress = Number(req.body.progress || 0);
+    }
+
     const project = await Project.findByIdAndUpdate(
       req.params.id,
-      {
-        ...req.body,
-        budget: Number(req.body.budget || 0),
-        progress: Number(req.body.progress || 0),
-      },
+      updateData,
       { new: true, runValidators: true },
     );
 
-    if (!project) {
-      return res.status(404).json({ message: "Project not found." });
-    }
+    const previousStaffIds = new Set(
+      (existingProject.assignedStaff || []).map((staffId) => String(staffId)),
+    );
+    const newlyAssignedStaffIds = (project.assignedStaff || []).filter(
+      (staffId) => !previousStaffIds.has(String(staffId)),
+    );
+
+    await notifyAssignedStaff(project, newlyAssignedStaffIds);
 
     res.json(project);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({
+      message: error.message,
+    });
   }
 };
 
@@ -151,7 +202,7 @@ exports.dashboardStats = async (req, res) => {
       .limit(5);
 
     const equipment = await Equipment.find({
-      project: { $in: projectIds },
+      assignedProject: { $in: projectIds },
     });
 
     const totalExpenses = expenses.reduce((sum, e) => {
@@ -322,16 +373,19 @@ exports.getMyProjects = async (req, res) => {
         ],
       })
         .populate("assignedStaff", "name email role")
+        .populate("clientUser", "name email role")
         .sort({ createdAt: -1 });
     } else if (req.user.role === "client") {
       projects = await Project.find({
         clientUser: req.user._id,
       })
         .populate("assignedStaff", "name email role")
+        .populate("clientUser", "name email role")
         .sort({ createdAt: -1 });
     } else {
       projects = await Project.find()
         .populate("assignedStaff", "name email role")
+        .populate("clientUser", "name email role")
         .sort({ createdAt: -1 });
     }
 
