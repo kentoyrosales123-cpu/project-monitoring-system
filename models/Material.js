@@ -9,6 +9,20 @@ const materialSchema = new mongoose.Schema(
     },
 
     materialName: { type: String, required: true },
+    category: {
+      type: String,
+      default: "",
+    },
+
+    reorderLevel: {
+      type: Number,
+      default: 0,
+    },
+
+    unitCost: {
+      type: Number,
+      default: 0,
+    },
     quantityDelivered: { type: Number, default: 0 },
     quantityUsed: { type: Number, default: 0 },
     unit: { type: String, required: true },

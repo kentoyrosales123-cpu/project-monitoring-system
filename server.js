@@ -58,19 +58,89 @@ app.use(
 
 app.use("/api/equipment-requests", require("./routes/equipmentRequestRoutes"));
 
-app.use(
-  "/api/issues",
-  require("./routes/crudRoutes")(
-    crud(require("./models/Issue"), {
-      populate: "project reportedBy",
-      attachUser: "reportedBy",
-    }),
-  ),
-);
+const Issue = require("./models/Issue");
+const Notification = require("./models/Notification");
+const User = require("./models/User");
+const { protect } = require("./middleware/authMiddleware");
+
+app.get("/api/issues", protect, async (req, res) => {
+  const issues = await Issue.find()
+    .populate("project reportedBy")
+    .sort({ createdAt: -1 });
+
+  res.json(issues);
+});
+
+app.post("/api/issues", protect, async (req, res) => {
+  try {
+    const issue = await Issue.create({
+      ...req.body,
+      reportedBy: req.user._id,
+    });
+
+    const admins = await User.find({ role: "admin" });
+
+    if (admins.length > 0) {
+      await Notification.insertMany(
+        admins.map((admin) => ({
+          user: admin._id,
+          title: "New Issue/Risk Filed",
+          message: `${req.user.name} filed an issue/risk: ${issue.title}`,
+          type: "issue_risk",
+        })),
+      );
+    }
+
+    const populatedIssue = await Issue.findById(issue._id).populate(
+      "project reportedBy",
+    );
+
+    res.status(201).json(populatedIssue);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.put("/api/issues/:id", protect, async (req, res) => {
+  try {
+    const oldIssue = await Issue.findById(req.params.id).populate("reportedBy");
+
+    const issue = await Issue.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+    }).populate("project reportedBy");
+
+    if (!issue) {
+      return res.status(404).json({ message: "Issue/Risk not found" });
+    }
+
+    if (
+      req.body.status === "Resolved" &&
+      oldIssue?.status !== "Resolved" &&
+      issue.reportedBy?._id
+    ) {
+      await Notification.create({
+        user: issue.reportedBy._id,
+        title: "Issue/Risk Resolved",
+        message: `Your issue/risk "${issue.title}" has been acknowledged as solved by admin.`,
+        type: "issue_risk",
+      });
+    }
+
+    res.json(issue);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.delete("/api/issues/:id", protect, async (req, res) => {
+  await Issue.findByIdAndDelete(req.params.id);
+  res.json({ message: "Issue/Risk deleted" });
+});
 
 app.use("/api/export", require("./routes/exportRoutes"));
 app.use("/api/notifications", require("./routes/notificationRoutes"));
 app.use("/api/productivity", productivityRoutes);
+app.use("/api/supply-requests", require("./routes/supplyRequestRoutes"));
 
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));

@@ -77,9 +77,7 @@ exports.approveRequest = async (req, res) => {
       });
     }
 
-    const availableStock =
-      Number(material.quantityDelivered || 0) -
-      Number(material.quantityUsed || 0);
+    const availableStock = Number(material.quantityDelivered || 0);
 
     if (availableStock < Number(request.quantity || 0)) {
       return res.status(400).json({
@@ -154,40 +152,9 @@ exports.markOutForDelivery = async (req, res) => {
       });
     }
 
-    const material = await Material.findOne({
-      project: null,
-      materialName: new RegExp(`^${request.materialName.trim()}$`, "i"),
-    });
-    if (!material) {
-      return res.status(400).json({
-        message: "Cannot deliver. Material does not exist in warehouse stock.",
-      });
-    }
-
-    const availableStock =
-      Number(material.quantityDelivered || 0) -
-      Number(material.quantityUsed || 0);
-
-    if (availableStock < Number(request.quantity || 0)) {
-      return res.status(400).json({
-        message: `Cannot deliver. Available warehouse stock is only ${availableStock} ${material.unit}.`,
-      });
-    }
-
-    material.quantityUsed =
-      Number(material.quantityUsed || 0) + Number(request.quantity || 0);
-
-    material.inventoryOnHand =
-      Number(material.quantityDelivered || 0) -
-      Number(material.quantityUsed || 0);
-
-    material.lastUpdatedBy = req.user._id;
-    material.lastUpdatedAt = new Date();
-
     request.status = "Out for Delivery";
     request.deliveredAt = new Date();
 
-    await material.save();
     await request.save();
 
     await createNotification({
@@ -198,9 +165,8 @@ exports.markOutForDelivery = async (req, res) => {
     });
 
     res.json({
-      message: "Material marked out for delivery and warehouse stock deducted.",
+      message: "Material marked as out for delivery.",
       request,
-      material,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -221,10 +187,47 @@ exports.confirmReceived = async (req, res) => {
       });
     }
 
+    // FIND WAREHOUSE MATERIAL
+    const warehouseMaterial = await Material.findOne({
+      project: null,
+      materialName: new RegExp(`^${request.materialName.trim()}$`, "i"),
+    });
+
+    if (!warehouseMaterial) {
+      return res.status(400).json({
+        message: "Warehouse material not found.",
+      });
+    }
+
+    const requestQty = Number(request.quantity || 0);
+
+    const availableStock = Number(warehouseMaterial.quantityDelivered || 0);
+
+    if (availableStock < requestQty) {
+      return res.status(400).json({
+        message: `Only ${availableStock} ${warehouseMaterial.unit} available in warehouse.`,
+      });
+    }
+
+    // ✅ AUTOMATIC DEDUCT FROM WAREHOUSE
+    warehouseMaterial.quantityDelivered =
+      Number(warehouseMaterial.quantityDelivered || 0) - requestQty;
+
+    warehouseMaterial.inventoryOnHand = Number(
+      warehouseMaterial.quantityDelivered || 0,
+    );
+
+    warehouseMaterial.lastUpdatedBy = req.user._id;
+    warehouseMaterial.lastUpdatedAt = new Date();
+
+    await warehouseMaterial.save();
+
+    // MARK REQUEST DELIVERED
     request.status = "Delivered";
     request.receivedBy = req.user._id;
     request.receivedAt = new Date();
 
+    // ADD TO PROJECT MATERIALS
     let projectMaterial = await Material.findOne({
       project: request.project,
       materialName: new RegExp(`^${request.materialName.trim()}$`, "i"),
@@ -232,8 +235,11 @@ exports.confirmReceived = async (req, res) => {
 
     if (projectMaterial) {
       projectMaterial.quantityDelivered =
-        Number(projectMaterial.quantityDelivered || 0) +
-        Number(request.quantity || 0);
+        Number(projectMaterial.quantityDelivered || 0) + requestQty;
+
+      projectMaterial.inventoryOnHand =
+        Number(projectMaterial.quantityDelivered || 0) -
+        Number(projectMaterial.quantityUsed || 0);
 
       projectMaterial.lastUpdatedBy = req.user._id;
       projectMaterial.lastUpdatedAt = new Date();
@@ -243,10 +249,13 @@ exports.confirmReceived = async (req, res) => {
       projectMaterial = await Material.create({
         project: request.project,
         materialName: request.materialName.trim(),
-        quantityDelivered: Number(request.quantity || 0),
+        category: warehouseMaterial.category || "",
+        reorderLevel: 0,
+        unitCost: warehouseMaterial.unitCost || 0,
+        quantityDelivered: requestQty,
         quantityUsed: 0,
-        inventoryOnHand: 0,
-        unit: request.unit || "pcs",
+        inventoryOnHand: requestQty,
+        unit: request.unit || warehouseMaterial.unit || "pcs",
         supplier: "Warehouse Delivery",
         deliveryDate: new Date(),
         status: "Delivered",
@@ -267,14 +276,16 @@ exports.confirmReceived = async (req, res) => {
       await createNotification({
         user: inv._id,
         title: "Material Received",
-        message: `${req.user.name} confirmed receiving ${request.materialName}.`,
+        message: `${req.user.name} confirmed receiving ${request.materialName}. Warehouse stock deducted.`,
         type: "received",
       });
     }
 
     res.json({
-      message: "Material delivery confirmed and added to project materials.",
+      message:
+        "Material received successfully. Warehouse inventory automatically deducted.",
       request,
+      warehouseMaterial,
       projectMaterial,
     });
   } catch (error) {

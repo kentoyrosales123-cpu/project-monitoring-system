@@ -159,6 +159,7 @@ function layout(title) {
         items: [
           ["🧱", "Materials", "/materials.html"],
           ["📦", "Material Requests", "/material-requests.html"],
+          ["📨", "Supply Requests", "/supply-requests.html"],
           ["🚜", "Equipment", "/equipment.html"],
           ["🚚", "Equipment Requests", "/equipment-requests.html"],
         ],
@@ -255,7 +256,7 @@ function layout(title) {
                 id="notificationBell"
                 class="icon-btn"
                 title="Notifications"
-                onclick="toggleNotifications()"
+                onclick="toggleNotifications(event)"
               >
                 🔔
               </button>
@@ -2406,6 +2407,117 @@ if (page === "worker-dashboard.html") workerDashboardPage();
 if (page === "worker-project.html") workerProjectPage();
 if (page === "worker-attendance.html") workerAttendancePage();
 if (page === "worker-tasks.html") workerTasksPage();
+if (page === "supply-requests.html") supplyRequestsPage();
+
+async function supplyRequestsPage() {
+  layout("Supply Requests");
+
+  const rows = await api("/api/supply-requests");
+
+  window.supplyRequestsData = rows;
+
+  qs("#content").innerHTML = `
+    <section class="panel">
+      <input
+        id="supplyRequestSearch"
+        placeholder="Search material, category, status..."
+        oninput="filterSupplyRequests()"
+      >
+    </section>
+
+    <br>
+
+    <div id="supplyRequestsTable"></div>
+  `;
+
+  renderSupplyRequestsTable(rows);
+}
+
+function renderSupplyRequestsTable(rows) {
+  qs("#supplyRequestsTable").innerHTML = table(
+    rows.map((r) => ({
+      ...r,
+      actions: `
+        ${
+          user.role === "admin" && r.status === "Pending"
+            ? `
+              <button class="btn success" onclick="approveSupplyRequest('${r._id}')">
+                Approve
+              </button>
+
+              <button class="btn danger" onclick="rejectSupplyRequest('${r._id}')">
+                Reject
+              </button>
+            `
+            : ""
+        }
+      `,
+    })),
+    [
+      { label: "Material", key: "materialName" },
+      { label: "Category", render: (r) => r.category || "-" },
+      {
+        label: "Current Qty",
+        render: (r) => `${r.currentQty || 0} ${r.unit || ""}`,
+      },
+      {
+        label: "Reorder Level",
+        render: (r) => `${r.reorderLevel || 0} ${r.unit || ""}`,
+      },
+      {
+        label: "Requested Qty",
+        render: (r) => `${r.requestedQty || 0} ${r.unit || ""}`,
+      },
+      { label: "Reason", render: (r) => r.reason || "-" },
+      {
+        label: "Status",
+        render: (r) =>
+          `<span class="status-badge ${statusClass(r.status)}">${r.status}</span>`,
+      },
+      { label: "Requested By", render: (r) => r.requestedBy?.name || "-" },
+      { label: "Requested Date", render: (r) => dateTime(r.createdAt) },
+      { label: "Reviewed By", render: (r) => r.reviewedBy?.name || "-" },
+      { label: "Reviewed Date", render: (r) => dateTime(r.reviewedAt) },
+    ],
+  );
+}
+
+function filterSupplyRequests() {
+  const keyword = qs("#supplyRequestSearch")?.value.toLowerCase() || "";
+
+  const filtered = (window.supplyRequestsData || []).filter((r) => {
+    return (
+      (r.materialName || "").toLowerCase().includes(keyword) ||
+      (r.category || "").toLowerCase().includes(keyword) ||
+      (r.status || "").toLowerCase().includes(keyword) ||
+      (r.requestedBy?.name || "").toLowerCase().includes(keyword)
+    );
+  });
+
+  renderSupplyRequestsTable(filtered);
+}
+
+async function approveSupplyRequest(id) {
+  if (!confirm("Approve this restock request?")) return;
+
+  await api(`/api/supply-requests/${id}/approve`, {
+    method: "PUT",
+  });
+
+  alert("Restock request approved.");
+  supplyRequestsPage();
+}
+
+async function rejectSupplyRequest(id) {
+  if (!confirm("Reject this restock request?")) return;
+
+  await api(`/api/supply-requests/${id}/reject`, {
+    method: "PUT",
+  });
+
+  alert("Restock request rejected.");
+  supplyRequestsPage();
+}
 
 async function workerTasksPage() {
   layout("My Tasks");
@@ -3553,76 +3665,139 @@ async function materialRequestForm() {
     "/api/materials/warehouse/request-options",
   );
 
-  const materialOptions = warehouseMaterials
+  const materialRows = warehouseMaterials
     .filter((m) => {
-      const remaining =
-        Number(m.quantityDelivered || 0) - Number(m.quantityUsed || 0);
+      const remaining = Number(m.quantityDelivered || 0);
 
       return !m.project && remaining > 0;
     })
     .map((m) => {
-      const remaining =
-        Number(m.quantityDelivered || 0) - Number(m.quantityUsed || 0);
+      const remaining = Number(m.quantityDelivered || 0);
 
       return `
-        <option 
-          value="${m.materialName}"
-          data-unit="${m.unit || ""}"
-          data-available="${remaining}"
+        <div 
+          class="material-request-row"
+          data-search="${`${m.materialName || ""} ${m.category || ""} ${m.unit || ""}`.toLowerCase()}"
         >
-          ${m.materialName} - Available: ${remaining} ${m.unit || ""}
-        </option>
+          <div>
+            <b>${m.materialName}</b>
+            <small>
+              Available: ${remaining} ${m.unit || ""}
+              ${m.category ? `• ${m.category}` : ""}
+            </small>
+          </div>
+
+          <input
+            type="number"
+            min="0"
+            max="${remaining}"
+            placeholder="Qty"
+            class="multi-material-qty"
+            data-material="${m.materialName}"
+            data-unit="${m.unit || ""}"
+            data-available="${remaining}"
+          >
+        </div>
       `;
     })
     .join("");
 
   modal(`
-    <h3>Request Material</h3>
+    <h3>Request Materials</h3>
 
-    <form onsubmit="saveMaterialRequest(event)">
+    <form onsubmit="saveMultipleMaterialRequest(event)">
       <label>Project</label>
       <select name="project" required>
         ${window.materialRequestProjectOptions}
       </select>
 
-      <label>Material</label>
-      <select 
-        name="materialName" 
-        id="requestMaterialSelect"
-        onchange="updateMaterialRequestInfo()"
-        required
+      <label>Materials</label>
+
+      <input
+        type="text"
+        id="multiMaterialSearch"
+        placeholder="Search material..."
+        oninput="filterMultiMaterialRows()"
       >
-        <option value="">Select warehouse material</option>
-        ${materialOptions}
-      </select>
 
-      <div id="selectedMaterialInfo" class="panel" style="margin:12px 0;">
-        Select a material to view available stock.
+      <div class="multi-material-scroll">
+        ${
+          materialRows ||
+          `<p class="empty-state">No available warehouse materials.</p>`
+        }
       </div>
 
-      <div class="form-grid">
-        <input 
-          name="quantity" 
-          id="requestMaterialQuantity"
-          type="number" 
-          min="1" 
-          placeholder="Quantity" 
-          required
-        >
+      <textarea
+        name="purpose"
+        placeholder="Purpose / reason for request"
+      ></textarea>
 
-        <input 
-          name="unit" 
-          id="requestMaterialUnit"
-          placeholder="Unit"
-          readonly
-        >
-      </div>
-
-      <textarea name="purpose" placeholder="Purpose / reason for request"></textarea>
-
-      <button class="btn">Submit Request</button>
+      <button class="btn">Submit Material Requests</button>
     </form>
   `);
+}
+
+function filterMultiMaterialRows() {
+  const keyword =
+    document.getElementById("multiMaterialSearch")?.value.toLowerCase() || "";
+
+  document.querySelectorAll(".material-request-row").forEach((row) => {
+    const searchableText = row.dataset.search || "";
+    row.style.display = searchableText.includes(keyword) ? "grid" : "none";
+  });
+}
+
+async function saveMultipleMaterialRequest(e) {
+  e.preventDefault();
+
+  const form = e.target;
+  const project = form.project.value;
+  const purpose = form.purpose.value || "";
+
+  const selectedMaterials = [
+    ...document.querySelectorAll(".multi-material-qty"),
+  ]
+    .map((input) => ({
+      materialName: input.dataset.material,
+      unit: input.dataset.unit,
+      available: Number(input.dataset.available || 0),
+      quantity: Number(input.value || 0),
+    }))
+    .filter((m) => m.quantity > 0);
+
+  if (!selectedMaterials.length) {
+    alert("Please enter quantity for at least one material.");
+    return;
+  }
+
+  for (const item of selectedMaterials) {
+    if (item.quantity > item.available) {
+      alert(
+        `Only ${item.available} ${item.unit} available for ${item.materialName}.`,
+      );
+      return;
+    }
+  }
+
+  try {
+    for (const item of selectedMaterials) {
+      await api("/api/material-requests", {
+        method: "POST",
+        body: JSON.stringify({
+          project,
+          materialName: item.materialName,
+          quantity: item.quantity,
+          unit: item.unit,
+          purpose,
+        }),
+      });
+    }
+
+    alert("Material requests submitted successfully.");
+    location.reload();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function updateMaterialRequestInfo() {
@@ -3724,11 +3899,13 @@ async function materialsPage() {
 
   const filteredRows =
     user.role === "staff" && selectedProject
-      ? rows.filter(
-          (m) =>
-            String(m.project?._id || m.project) === String(selectedProject),
-        )
-      : rows;
+      ? rows.filter((m) => {
+          const materialProjectId = String(m.project?._id || m.project || "");
+          return materialProjectId === String(selectedProject);
+        })
+      : user.role === "inventory"
+        ? rows.filter((m) => !m.project)
+        : rows;
 
   window.materialsData = filteredRows;
 
@@ -3784,12 +3961,33 @@ async function materialsPage() {
                   required: true,
                 },
                 {
+                  name: "category",
+                  label: "Category",
+                  required: true,
+                },
+                {
+                  name: "unit",
+                  label: "Unit",
+                  required: true,
+                },
+                {
                   name: "quantityDelivered",
-                  label: "Available Warehouse Stock",
+                  label: "Qty",
                   type: "number",
                   required: true,
                 },
-                { name: "unit", label: "Unit", required: true },
+                {
+                  name: "reorderLevel",
+                  label: "Reorder Level",
+                  type: "number",
+                  required: true,
+                },
+                {
+                  name: "unitCost",
+                  label: "Unit Cost",
+                  type: "number",
+                  required: true,
+                },
                 {
                   name: "deliveryDate",
                   label: "Stock Date",
@@ -3836,26 +4034,36 @@ function renderMaterialsTable(rows) {
   const columns =
     user.role === "inventory"
       ? [
-          { label: "Material", key: "materialName" },
-          { label: "Warehouse Stock", key: "quantityDelivered" },
-          { label: "Released", key: "quantityUsed" },
+          { label: "Material Name", key: "materialName" },
+          { label: "Category", render: (r) => r.category || "-" },
+          { label: "Unit", render: (r) => r.unit || "-" },
           {
-            label: "Remaining",
-            render: (r) => {
-              const remaining =
-                Number(r.quantityDelivered || 0) - Number(r.quantityUsed || 0);
-
-              return `
-                <span style="
-                  font-weight:600;
-                  color:${remaining <= 5 ? "#dc2626" : "#16a34a"};
-                ">
-                  ${remaining}
-                </span>
-              `;
-            },
+            label: "Qty",
+            render: (r) => Number(r.quantityDelivered || 0),
           },
-          { label: "Unit", key: "unit" },
+          {
+            label: "Reorder Level",
+            render: (r) => Number(r.reorderLevel || 0),
+          },
+          {
+            label: "Unit Cost (₱)",
+            render: (r) => money(r.unitCost || 0),
+          },
+          {
+            label: "Date Added",
+            render: (r) => (r.createdAt ? date(r.createdAt) : "-"),
+          },
+          {
+            label: "Time Added",
+            render: (r) =>
+              r.createdAt
+                ? new Date(r.createdAt).toLocaleTimeString("en-PH", {
+                    hour: "numeric",
+                    minute: "2-digit",
+                    hour12: true,
+                  })
+                : "-",
+          },
         ]
       : [
           projectCol,
@@ -3906,7 +4114,7 @@ function renderMaterialsTable(rows) {
               `;
             },
           },
-          { label: "Unit", key: "unit" },
+          { label: "Unit", render: (r) => r.unit || "-" },
         ];
 
   qs("#materialsTable").innerHTML = table(
@@ -3914,11 +4122,174 @@ function renderMaterialsTable(rows) {
       ...r,
       actions:
         user.role === "admin" || user.role === "inventory"
-          ? `<button class="btn danger" onclick="del('/api/materials','${r._id}')">Delete</button>`
+          ? `
+      ${
+        user.role === "inventory" &&
+        Number(r.quantityDelivered || 0) <= Number(r.reorderLevel || 0)
+          ? `
+            <button class="btn success" onclick='restockRequestForm(${JSON.stringify(r)})'>
+              Request Material
+            </button>
+          `
+          : ""
+      }
+
+      <button class="btn warning" onclick='editMaterial(${JSON.stringify(r)})'>
+        Edit
+      </button>
+
+      <button class="btn danger" onclick="del('/api/materials','${r._id}')">
+        Delete
+      </button>
+    `
           : "",
     })),
     columns,
   );
+}
+
+function editMaterial(m = {}) {
+  modal(`
+    <h3>Edit Warehouse Material</h3>
+
+    <form onsubmit="updateMaterial(event, '${m._id}')">
+      <div class="form-grid">
+        <input
+          name="materialName"
+          placeholder="Material Name"
+          value="${m.materialName || ""}"
+          required
+        >
+
+        <input
+          name="category"
+          placeholder="Category"
+          value="${m.category || ""}"
+          required
+        >
+
+        <input
+          name="unit"
+          placeholder="Unit"
+          value="${m.unit || ""}"
+          required
+        >
+
+        <input
+          name="quantityDelivered"
+          type="number"
+          min="0"
+          placeholder="Qty"
+          value="${m.quantityDelivered || 0}"
+          required
+        >
+
+        <input
+          name="reorderLevel"
+          type="number"
+          min="0"
+          placeholder="Reorder Level"
+          value="${m.reorderLevel || 0}"
+          required
+        >
+
+        <input
+          name="unitCost"
+          type="number"
+          min="0"
+          step="0.01"
+          placeholder="Unit Cost"
+          value="${m.unitCost || 0}"
+          required
+        >
+
+        <input
+          name="deliveryDate"
+          type="date"
+          value="${date(m.deliveryDate)}"
+        >
+      </div>
+
+      <button class="btn success">Update Material</button>
+    </form>
+  `);
+}
+
+async function updateMaterial(e, id) {
+  e.preventDefault();
+
+  try {
+    const data = Object.fromEntries(new FormData(e.target));
+
+    data.quantityDelivered = Number(data.quantityDelivered || 0);
+    data.reorderLevel = Number(data.reorderLevel || 0);
+    data.unitCost = Number(data.unitCost || 0);
+
+    await api(`/api/materials/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+
+    alert("Material updated successfully.");
+    materialsPage();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+function restockRequestForm(material = {}) {
+  const currentQty = Number(material.quantityDelivered || 0);
+
+  modal(`
+    <h3>Request Material Restock</h3>
+
+    <form onsubmit="saveRestockRequest(event, '${material._id}')">
+      <label>Material</label>
+      <input value="${material.materialName || ""}" readonly>
+
+      <div class="form-grid">
+        <input value="${currentQty}" readonly placeholder="Current Qty">
+        <input value="${material.reorderLevel || 0}" readonly placeholder="Reorder Level">
+        <input value="${material.unit || ""}" readonly placeholder="Unit">
+
+        <input
+          name="requestedQty"
+          type="number"
+          min="1"
+          placeholder="Requested Quantity"
+          required
+        >
+      </div>
+
+      <textarea
+        name="reason"
+        placeholder="Reason for restock request"
+      >Stock is below reorder level.</textarea>
+
+      <button class="btn success">Submit Request</button>
+    </form>
+  `);
+}
+
+async function saveRestockRequest(e, materialId) {
+  e.preventDefault();
+
+  try {
+    const data = Object.fromEntries(new FormData(e.target));
+
+    data.materialId = materialId;
+    data.requestedQty = Number(data.requestedQty || 0);
+
+    await api("/api/supply-requests", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+
+    alert("Restock request submitted to admin.");
+    materialsPage();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 async function updateUsedQuantity(id) {
@@ -5606,34 +5977,122 @@ async function updateEquipment(e, id) {
   }
 }
 
-if (page === "issues.html")
-  simplePage(
-    "Issues/Risks",
-    "/api/issues",
+if (page === "issues.html") issuesPage();
+
+async function issuesPage() {
+  layout("Issues/Risks");
+
+  const rows = await api("/api/issues");
+  const projectOptions = await loadProjectsSelect();
+
+  window.issueProjectOptions = projectOptions;
+  window.issuesData = rows;
+
+  qs("#content").innerHTML = `
+    <button class="btn" onclick="issueForm()">File Issue/Risk</button>
+    <br><br>
+    <div id="issuesTable"></div>
+  `;
+
+  renderIssuesTable(rows);
+}
+
+function renderIssuesTable(rows) {
+  qs("#issuesTable").innerHTML = table(
+    rows.map((r) => ({
+      ...r,
+      actions: `
+        ${
+          user.role === "admin" && r.status !== "Resolved"
+            ? `
+              <button class="btn success" onclick="acknowledgeIssueSolved('${r._id}')">
+                Acknowledge Solved
+              </button>
+            `
+            : ""
+        }
+
+        ${
+          user.role === "admin"
+            ? `<button class="btn danger" onclick="del('/api/issues','${r._id}')">Delete</button>`
+            : ""
+        }
+      `,
+    })),
     [
-      { name: "project" },
-      { name: "title", label: "Issue title", required: true },
-      { name: "description", label: "Description", type: "textarea" },
-      {
-        name: "priority",
-        type: "select",
-        options: ["Low", "Medium", "High", "Critical"],
-      },
-      {
-        name: "status",
-        type: "select",
-        options: ["Open", "In Progress", "Resolved"],
-      },
-    ],
-    [
-      projectCol,
+      { label: "Project", render: (r) => r.project?.name || "-" },
       { label: "Title", key: "title" },
+      { label: "Description", key: "description" },
       { label: "Priority", key: "priority" },
-      { label: "Status", key: "status" },
-      { label: "Reported By", render: (r) => r.reportedBy?.name || "" },
+      {
+        label: "Status",
+        render: (r) =>
+          `<span class="status-badge ${statusClass(r.status)}">${r.status}</span>`,
+      },
+      { label: "Reported By", render: (r) => r.reportedBy?.name || "-" },
       { label: "Date", render: (r) => date(r.dateReported) },
     ],
   );
+}
+
+function issueForm() {
+  modal(`
+    <h3>File Issue/Risk</h3>
+
+    <form onsubmit="saveIssue(event)">
+      <label>Project</label>
+      <select name="project" required>
+        ${window.issueProjectOptions || ""}
+      </select>
+
+      <label>Title</label>
+      <input name="title" placeholder="Issue/Risk title" required>
+
+      <label>Description</label>
+      <textarea name="description" placeholder="Describe the issue or risk" required></textarea>
+
+      <label>Priority</label>
+      <select name="priority">
+        <option>Low</option>
+        <option>Medium</option>
+        <option>High</option>
+        <option>Critical</option>
+      </select>
+
+      <input type="hidden" name="status" value="Open">
+
+      <button class="btn">Submit Issue/Risk</button>
+    </form>
+  `);
+}
+
+async function saveIssue(e) {
+  e.preventDefault();
+
+  const data = Object.fromEntries(new FormData(e.target));
+
+  await api("/api/issues", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+
+  alert("Issue/Risk filed successfully.");
+  location.reload();
+}
+
+async function acknowledgeIssueSolved(id) {
+  if (!confirm("Acknowledge this issue/risk as solved?")) return;
+
+  await api(`/api/issues/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      status: "Resolved",
+    }),
+  });
+
+  alert("Issue/Risk acknowledged as solved.");
+  location.reload();
+}
 
 async function inventoryDashboard() {
   layout("Inventory Dashboard");
@@ -5999,9 +6458,29 @@ async function loadNotifications() {
   }
 }
 
-function toggleNotifications() {
-  document.querySelector("#notificationDropdown")?.classList.toggle("show");
+function toggleNotifications(event) {
+  event?.stopPropagation();
+
+  const dropdown = qs("#notificationDropdown");
+
+  if (!dropdown) return;
+
+  dropdown.classList.toggle("show");
 }
+
+document.addEventListener("click", function (e) {
+  const dropdown = qs("#notificationDropdown");
+  const bell = qs("#notificationBell");
+
+  if (!dropdown) return;
+
+  const clickedInsideDropdown = dropdown.contains(e.target);
+  const clickedBell = bell?.contains(e.target);
+
+  if (!clickedInsideDropdown && !clickedBell) {
+    dropdown.classList.remove("show");
+  }
+});
 
 async function markNotificationsRead() {
   try {
@@ -8703,3 +9182,17 @@ function getWorkItemRanking(rows) {
     }))
     .sort((a, b) => b.rate - a.rate);
 }
+
+document.addEventListener("click", function (e) {
+  const dropdown = qs("#notificationDropdown");
+  const bell = qs("#notificationBell");
+
+  if (!dropdown) return;
+
+  const clickedInsideDropdown = dropdown.contains(e.target);
+  const clickedBell = bell?.contains(e.target);
+
+  if (!clickedInsideDropdown && !clickedBell) {
+    dropdown.classList.remove("show");
+  }
+});

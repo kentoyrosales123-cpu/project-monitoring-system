@@ -3441,3 +3441,99 @@ body:has([href="/inventory-dashboard.html"].active) .panel canvas {
   width: 18px;
   height: 18px;
 }
+
+/* ==========================
+   MATERIAL INVENTORY TABLE
+========================== */
+
+.stock-good {
+  color: #16a34a;
+  font-weight: 900;
+}
+
+.stock-low {
+  color: #dc2626;
+  font-weight: 900;
+}
+
+.material-table th {
+  background: #f6f2ea;
+  color: #374151;
+  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.material-table td {
+  vertical-align: middle;
+  padding: 18px 14px;
+}
+
+.material-table tr:hover td {
+  background: #fffaf3;
+}
+
+/* ==========================
+   MATERIAL REQUEST SCROLL
+========================== */
+
+.material-request-list,
+.material-options,
+.request-materials-container {
+  max-height: 350px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+}
+
+/* Nice scrollbar */
+.material-request-list::-webkit-scrollbar,
+.material-options::-webkit-scrollbar,
+.request-materials-container::-webkit-scrollbar {
+  width: 8px;
+}
+
+.material-request-list::-webkit-scrollbar-thumb,
+.material-options::-webkit-scrollbar-thumb,
+.request-materials-container::-webkit-scrollbar-thumb {
+  background: #d18a17;
+  border-radius: 999px;
+}
+
+.material-request-list::-webkit-scrollbar-track,
+.material-options::-webkit-scrollbar-track,
+.request-materials-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.multi-material-scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #fff;
+  padding: 10px;
+}
+
+.material-request-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.material-request-row:last-child {
+  border-bottom: none;
+}
+
+.material-request-row small {
+  display: block;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.material-request-row input {
+  width: 100%;
+}

@@ -43,38 +43,32 @@ exports.createMaterial = async (req, res) => {
     const {
       project,
       materialName,
+      category,
+      unit,
       quantityDelivered,
       quantityUsed,
-      unit,
       supplier,
       deliveryDate,
+      reorderLevel,
+      unitCost,
     } = req.body;
-
-    if (!materialName || !unit || !deliveryDate) {
-      return res.status(400).json({
-        message:
-          "Project, material name, unit, and delivery date are required.",
-      });
-    }
 
     const material = await Material.create({
       project: project || null,
       materialName,
-      quantityDelivered: Number(quantityDelivered || 0),
-      quantityUsed: 0,
-      inventoryOnHand: Number(quantityDelivered || 0),
+      category: category || "",
       unit,
+      quantityDelivered: Number(quantityDelivered || 0),
+      quantityUsed: Number(quantityUsed || 0),
       supplier: supplier || "",
       deliveryDate,
-      status: "Pending",
-      received: false,
+      reorderLevel: Number(reorderLevel || 0),
+      unitCost: Number(unitCost || 0),
     });
 
     res.status(201).json(material);
   } catch (error) {
-    res.status(500).json({
-      message: error.message,
-    });
+    res.status(500).json({ message: error.message });
   }
 };
 
